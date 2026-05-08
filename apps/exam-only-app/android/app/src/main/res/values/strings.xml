@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">DRILL</string>
+    <string name="title_activity_main">DRILL</string>
+    <string name="package_name">com.brilliance.drill</string>
+    <string name="custom_url_scheme">com.brilliance.drill</string>
+</resources>

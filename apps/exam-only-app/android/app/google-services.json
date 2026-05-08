@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "540896387046",
+    "firebase_url": "https://brilliance-717cc-default-rtdb.firebaseio.com",
+    "project_id": "brilliance-717cc",
+    "storage_bucket": "brilliance-717cc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:540896387046:android:ceb204066c769936270027",
+        "android_client_info": {
+          "package_name": "com.brilliance.drill"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "540896387046-sattgq0ofaj4moa3vpo6dbpu775k6f3p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1_dgzCUnAQHAqW1XV25chD80PNib4q0E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "540896387046-sattgq0ofaj4moa3vpo6dbpu775k6f3p.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
