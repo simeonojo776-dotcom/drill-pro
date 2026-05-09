@@ -1,13 +1,22 @@
 import { NextResponse } from 'next/server';
 import { doc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../../../../../packages/ui/src/firebase'; // Your exact path
+// Verify this path is correct for your monorepo structure
+import { db } from '../../../../../../packages/ui/src/firebase'; 
 import { Resend } from 'resend';
 
-// Initialize the Email Bot using your API key from Vercel Environment Variables
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(req) {
-  // 1. Security Check
+  // 1. INITIALIZE INSIDE POST: This prevents the Vercel Build Error
+  const apiKey = process.env.RESEND_API_KEY;
+  
+  if (!apiKey) {
+    console.error("❌ CONFIG ERROR: RESEND_API_KEY is not defined in Vercel Environment Variables.");
+    // We return a 200 to Paystack so they stop retrying, but log the error for us
+    return NextResponse.json({ error: "Email configuration missing" }, { status: 200 });
+  }
+
+  const resend = new Resend(apiKey);
+
+  // 2. PAYSTACK SECURITY CHECK
   const signature = req.headers.get('x-paystack-signature');
   if (!signature) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -16,57 +25,61 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
-    // 2. Only do something if the payment was successful
+    // 3. PROCESS SUCCESSFUL CHARGE
     if (body.event === 'charge.success') {
       const email = body.data.customer.email;
-      const amountPaid = body.data.amount / 100;
+      const amountPaid = body.data.amount / 100; // Convert kobo to Naira
 
-      // 3. Find the user in your database using their email
+      // 4. FIND USER IN FIRESTORE
       const usersRef = collection(db, "users");
       const q = query(usersRef, where("email", "==", email));
       const querySnapshot = await getDocs(q);
 
       if (!querySnapshot.empty) {
         const userDoc = querySnapshot.docs[0];
+        const userRef = doc(db, "users", userDoc.id);
         
-        // 4. Upgrade them in the database!
-        await updateDoc(doc(db, "users", userDoc.id), {
+        // 5. UPDATE PREMIUM STATUS
+        await updateDoc(userRef, {
           isPremium: true,
           accountTier: amountPaid >= 6000 ? "Yearly Elite" : "Monthly Pro",
-          premiumSince: new Date().toISOString()
+          premiumSince: new Date().toISOString(),
+          lastPaymentReference: body.data.reference
         });
         
-        console.log(`🤖 DB: Successfully upgraded ${email}`);
+        console.log(`✅ DB UPGRADE: ${email} is now Premium.`);
 
-        // 5. Fire off the professional Welcome Email!
+        // 6. SEND WELCOME EMAIL VIA RESEND
         try {
           await resend.emails.send({
-            from: 'Drill Pro <onboarding@resend.dev>', // Keep this until you buy a domain
+            from: 'Drill Pro <onboarding@resend.dev>',
             to: [email],
             subject: 'Drill Pro Premium Activated 🚀',
             html: `
-              <div style="background-color: #020617; color: white; padding: 40px; font-family: sans-serif; text-align: center; border-radius: 10px; border: 1px solid #1e293b;">
-                <h1 style="color: #38bdf8; margin-bottom: 10px;">Payment Successful!</h1>
-                <h2 style="color: #e2e8f0; margin-top: 0;">Welcome to Premium</h2>
-                <p style="color: #94a3b8; line-height: 1.6;">Your candidate profile (${email}) has been successfully upgraded. You now have full access to all features.</p>
-                <a href="https://drill-pro.vercel.app/dashboard" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; display: inline-block; margin-top: 25px; font-weight: bold; letter-spacing: 1px;">ACCESS TERMINAL</a>
+              <div style="background-color: #020617; color: white; padding: 40px; font-family: sans-serif; text-align: center; border-radius: 12px; border: 1px solid #1e293b;">
+                <h1 style="color: #38bdf8;">Access Granted</h1>
+                <p style="font-size: 16px; color: #cbd5e1;">Your candidate profile (${email}) has been successfully upgraded to Premium.</p>
+                <div style="margin: 30px 0;">
+                  <a href="https://drill-pro.vercel.app/" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold;">Launch Terminal</a>
+                </div>
+                <p style="font-size: 12px; color: #64748b;">If you didn't authorize this, please contact support.</p>
               </div>
             `,
           });
-          console.log(`✉️ RESEND: Email sent to ${email}`);
+          console.log(`✉️ EMAIL SENT: ${email}`);
         } catch (emailErr) {
-          // If email fails, don't crash the webhook. The user still paid!
-          console.error("Resend Error:", emailErr);
+          console.error("✉️ EMAIL ERROR:", emailErr.message);
         }
       } else {
-        console.log(`⚠️ BOT: Payment successful, but user ${email} not found in database.`);
+        console.warn(`⚠️ USER NOT FOUND: Payment received for ${email} but no DB record exists.`);
       }
     }
     
-    // Always tell Paystack "Message received!" so they don't keep trying
+    // Always acknowledge receipt to Paystack
     return NextResponse.json({ received: true }, { status: 200 });
+
   } catch (err) {
-    console.error("Webhook Error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("❌ WEBHOOK CRASH:", err.message);
+    return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 });
   }
 }
