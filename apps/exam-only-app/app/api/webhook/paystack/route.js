@@ -4,7 +4,7 @@ import { db } from '../../../../../../packages/ui/src/firebase'; // Your exact p
 import { Resend } from 'resend';
 
 // Initialize the Email Bot using your API key from Vercel Environment Variables
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(process.env.re_P9Tvgqz9_Py7ZFNeCn4xwdipPpzxQpkfr);
 
 export async function POST(req) {
   // 1. Security Check
