@@ -9,17 +9,20 @@ import {
 import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Image from 'next/image';
+// Added Eye icons for password toggle
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Added showPassword state
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const router = useRouter();
 
-  // Standard Professional Error Messages
   const getFriendlyError = (errorCode) => {
     switch (errorCode) {
       case 'auth/user-not-found': return "We couldn't find an account with that email.";
@@ -39,7 +42,6 @@ export default function AuthScreen() {
     try {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password);
-        // I REMOVED the router.push here so it stays on the same page!
       } else {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
@@ -52,8 +54,6 @@ export default function AuthScreen() {
           isPremium: false,
           accountTier: "Free"
         });
-        
-        // I REMOVED the router.push here too!
       }
     } catch (err) {
       setError(getFriendlyError(err.code));
@@ -136,11 +136,26 @@ export default function AuthScreen() {
                 </span>
               )}
             </div>
-            <input 
-              type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)}
-              style={{ width: '100%', padding: '12px 15px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: 'rgba(2, 6, 23, 0.5)', color: 'white', outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.2s' }}
-              onFocus={(e) => e.target.style.borderColor = '#38bdf8'} onBlur={(e) => e.target.style.borderColor = '#334155'} required
-            />
+            
+            <div style={{ position: 'relative' }}>
+              <input 
+                type={showPassword ? "text" : "password"} // Toggles masked/unmasked
+                placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)}
+                style={{ width: '100%', padding: '12px 45px 12px 15px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: 'rgba(2, 6, 23, 0.5)', color: 'white', outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.2s' }}
+                onFocus={(e) => e.target.style.borderColor = '#38bdf8'} onBlur={(e) => e.target.style.borderColor = '#334155'} required
+              />
+              
+              {/* Eye Toggle Icon */}
+              <div 
+                onClick={() => setShowPassword(!showPassword)}
+                style={{ 
+                  position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', 
+                  cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center' 
+                }}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </div>
+            </div>
           </div>
 
           <button 
