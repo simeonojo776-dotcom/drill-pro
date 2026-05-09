@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { doc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 // Make sure this points to wherever your firebase.js file is stored!
-import { db } from '../../../../packages/ui/src/firebase'; 
+import { db } from 'packages/ui/src/firebase'; 
 
 export async function POST(req) {
   // 1. Security Check: Did this really come from Paystack?
