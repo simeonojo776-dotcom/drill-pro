@@ -9,7 +9,7 @@ import {
 import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Image from 'next/image';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react'; 
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
@@ -36,14 +36,12 @@ export default function AuthScreen() {
     e.preventDefault();
     setError("");
     setIsLoading(true);
-
     try {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password);
       } else {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
-        
         await setDoc(doc(db, "users", user.uid), {
           email: user.email,
           createdAt: new Date().toISOString(),
@@ -169,23 +167,36 @@ export default function AuthScreen() {
         </form>
 
         <div style={{ marginTop: '25px', textAlign: 'center', borderTop: '1px solid #1e293b', paddingTop: '20px' }}>
-          <p style={{ fontSize: '13px', color: '#94a3b8', cursor: 'pointer', margin: '0 0 15px 0', transition: 'color 0.2s' }} 
+          <p style={{ fontSize: '13px', color: '#94a3b8', cursor: 'pointer', margin: '0 0 20px 0', transition: 'color 0.2s' }} 
             onClick={() => { setIsLogin(!isLogin); setError(""); }}
             onMouseEnter={(e) => e.target.style.color = '#38bdf8'} onMouseLeave={(e) => e.target.style.color = '#94a3b8'}
           >
             {isLogin ? "Don't have an account? Sign up." : "Already have an account? Log in."}
           </p>
 
-          {/* New Powered By Study Desk Section */}
           <div style={{ marginTop: '10px' }}>
             <a 
-              href="#" // Replace with your other app's URL eventually
+              href="https://www.instagram.com/studydesk2/" 
+              target="_blank"
+              rel="noopener noreferrer"
               style={{ 
-                fontSize: '11px', color: '#475569', textDecoration: 'none', letterSpacing: '1px', 
-                fontWeight: 'bold', textTransform: 'uppercase', transition: 'color 0.2s' 
+                fontSize: '11px', 
+                color: '#475569', 
+                textDecoration: 'none', 
+                letterSpacing: '1.5px', 
+                fontWeight: 'bold', 
+                textTransform: 'uppercase', 
+                transition: 'all 0.2s ease',
+                display: 'inline-block'
               }}
-              onMouseEnter={(e) => e.target.style.color = '#38bdf8'}
-              onMouseLeave={(e) => e.target.style.color = '#475569'}
+              onMouseEnter={(e) => {
+                e.target.style.color = '#38bdf8';
+                e.target.style.transform = 'scale(1.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.color = '#475569';
+                e.target.style.transform = 'scale(1)';
+              }}
             >
               Powered by STUDY DESK
             </a>
