@@ -9,14 +9,12 @@ import {
 import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Image from 'next/image';
-// Added Eye icons for password toggle
 import { Eye, EyeOff } from 'lucide-react';
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  // Added showPassword state
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -139,13 +137,11 @@ export default function AuthScreen() {
             
             <div style={{ position: 'relative' }}>
               <input 
-                type={showPassword ? "text" : "password"} // Toggles masked/unmasked
+                type={showPassword ? "text" : "password"}
                 placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)}
                 style={{ width: '100%', padding: '12px 45px 12px 15px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: 'rgba(2, 6, 23, 0.5)', color: 'white', outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.2s' }}
                 onFocus={(e) => e.target.style.borderColor = '#38bdf8'} onBlur={(e) => e.target.style.borderColor = '#334155'} required
               />
-              
-              {/* Eye Toggle Icon */}
               <div 
                 onClick={() => setShowPassword(!showPassword)}
                 style={{ 
@@ -173,12 +169,27 @@ export default function AuthScreen() {
         </form>
 
         <div style={{ marginTop: '25px', textAlign: 'center', borderTop: '1px solid #1e293b', paddingTop: '20px' }}>
-          <p style={{ fontSize: '13px', color: '#94a3b8', cursor: 'pointer', margin: 0, transition: 'color 0.2s' }} 
+          <p style={{ fontSize: '13px', color: '#94a3b8', cursor: 'pointer', margin: '0 0 15px 0', transition: 'color 0.2s' }} 
             onClick={() => { setIsLogin(!isLogin); setError(""); }}
             onMouseEnter={(e) => e.target.style.color = '#38bdf8'} onMouseLeave={(e) => e.target.style.color = '#94a3b8'}
           >
             {isLogin ? "Don't have an account? Sign up." : "Already have an account? Log in."}
           </p>
+
+          {/* New Powered By Study Desk Section */}
+          <div style={{ marginTop: '10px' }}>
+            <a 
+              href="#" // Replace with your other app's URL eventually
+              style={{ 
+                fontSize: '11px', color: '#475569', textDecoration: 'none', letterSpacing: '1px', 
+                fontWeight: 'bold', textTransform: 'uppercase', transition: 'color 0.2s' 
+              }}
+              onMouseEnter={(e) => e.target.style.color = '#38bdf8'}
+              onMouseLeave={(e) => e.target.style.color = '#475569'}
+            >
+              Powered by STUDY DESK
+            </a>
+          </div>
         </div>
 
       </div>
