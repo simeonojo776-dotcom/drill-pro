@@ -462,17 +462,22 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     finally { setIsFetchingLive(false); }
   };
 
-  const fetchAllAppUsers = async () => {
-    setIsFetchingUsers(true);
-    try {
-      const q = query(collection(db, "users"), orderBy("totalQuestionsAnswered", "desc"));
-      const querySnapshot = await getDocs(q);
-      const usersList = [];
-      querySnapshot.forEach((doc) => { usersList.push({ id: doc.id, ...doc.data() }); });
-      setAllAppUsers(usersList);
-    } catch (error) { alert("❌ Failed to load user database."); } 
-    finally { setIsFetchingUsers(false); }
-  };
+ const fetchAllAppUsers = async () => {
+  setIsFetchingUsers(true);
+  try {
+    // This grabs EVERY document in the users collection
+    const querySnapshot = await getDocs(collection(db, "users")); 
+    const users = [];
+    querySnapshot.forEach((doc) => {
+      users.push({ id: doc.id, ...doc.data() });
+    });
+    setAllAppUsers(users);
+  } catch (error) {
+    console.error("Error fetching users: ", error);
+  } finally {
+    setIsFetchingUsers(false);
+  }
+};
 
   const fetchPendingQuestions = async () => {
     setIsFetchingPending(true);

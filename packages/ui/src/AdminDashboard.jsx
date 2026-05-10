@@ -21,6 +21,9 @@ const AdminDashboard = ({
   const [adminMessage, setAdminMessage] = useState("");
   const [globalExamName, setGlobalExamName] = useState("");
   const [globalExamDate, setGlobalExamDate] = useState("");
+  
+  // 👉 NEW: SEARCH STATE FOR USERS
+  const [searchTerm, setSearchTerm] = useState("");
 
   // ==========================================
   // ALL FUNCTIONS MUST BE INSIDE THE COMPONENT
@@ -35,7 +38,6 @@ const AdminDashboard = ({
     if (!window.confirm(`⚠️ Broadcast "${globalExamName}" to EVERY user on the app?`)) return;
 
     try {
-      // Loop through every user and update their document
       for (const u of allAppUsers) {
         const userRef = doc(db, "users", u.id);
         await updateDoc(userRef, {
@@ -43,7 +45,7 @@ const AdminDashboard = ({
             id: Date.now().toString() + Math.random().toString(36).substring(7),
             name: globalExamName,
             date: globalExamDate,
-            subjectFocus: "GENERAL" // Or let the admin pick this too
+            subjectFocus: "GENERAL"
           })
         });
       }
@@ -55,11 +57,9 @@ const AdminDashboard = ({
     }
   };
 
-  // 1. View User Scores
   const handleSelectUser = async (userRecord) => {
     setSelectedUser(userRecord);
     try {
-      // Fetch their specific exam results
       const q = query(collection(db, "examResults"), where("userId", "==", userRecord.id));
       const snap = await getDocs(q);
       const history = [];
@@ -71,7 +71,6 @@ const AdminDashboard = ({
     }
   };
 
-  // 2. Direct Message User
   const handleSendDirectMessage = async () => {
     if (!adminMessage.trim()) return;
     try {
@@ -89,7 +88,6 @@ const AdminDashboard = ({
     } catch (err) { alert("Failed to send message"); }
   };
 
-  // 3. Lock/Unlock Account
   const handleToggleLock = async () => {
     const isCurrentlyLocked = selectedUser.isLocked || false;
     const confirmMsg = isCurrentlyLocked ? "Unlock this account?" : "LOCK this account? They will be unable to use the app.";
@@ -102,7 +100,6 @@ const AdminDashboard = ({
     } catch (err) { alert("Action failed"); }
   };
 
-  // 4. Reset User Account
   const handleResetAccount = async () => {
     if (!window.confirm("⚠️ DANGER: Completely wipe this user's stats and history?")) return;
     try {
@@ -113,10 +110,10 @@ const AdminDashboard = ({
         isPremium: false
       });
       alert("User record wiped clean.");
-      setSelectedUser(null); // Close dossier
+      setSelectedUser(null);
     } catch (err) { alert("Failed to reset"); }
   };
-  // 5. Promote/Revoke Admin Status
+
   const handleToggleAdmin = async () => {
     const isCurrentlyAdmin = selectedUser.isAdmin || false;
     const confirmMsg = isCurrentlyAdmin 
@@ -131,6 +128,37 @@ const AdminDashboard = ({
       alert(isCurrentlyAdmin ? "Admin rights revoked." : "User is now an Admin! 👑");
     } catch (err) { alert("Action failed"); }
   };
+
+  // 👉 NEW: MAKE PREMIUM FUNCTION
+  const handleMakePremium = async () => {
+    const isCurrentlyPremium = selectedUser.isPremium || false;
+    const confirmMsg = isCurrentlyPremium 
+      ? "Revoke Premium status? They will be returned to the Free tier." 
+      : "⭐ GRANT PREMIUM? They will bypass Paystack and get full access.";
+    
+    if (!window.confirm(confirmMsg)) return;
+    
+    try {
+      await updateDoc(doc(db, "users", selectedUser.id), { 
+        isPremium: !isCurrentlyPremium,
+        accountTier: !isCurrentlyPremium ? "Premium" : "Free"
+      });
+      setSelectedUser({ 
+        ...selectedUser, 
+        isPremium: !isCurrentlyPremium,
+        accountTier: !isCurrentlyPremium ? "Premium" : "Free" 
+      });
+      alert(isCurrentlyPremium ? "Premium Revoked." : "User is now Premium! ⭐");
+    } catch (err) { alert("Action failed"); }
+  };
+
+  // 👉 NEW: FILTER LOGIC FOR SEARCH BAR
+  const filteredUsers = allAppUsers.filter(user => {
+    const searchLower = searchTerm.toLowerCase();
+    const emailMatch = user.email && user.email.toLowerCase().includes(searchLower);
+    const nameMatch = user.displayName && user.displayName.toLowerCase().includes(searchLower);
+    return emailMatch || nameMatch;
+  });
 
   // ==========================================
   // UI RENDERING STARTS HERE
@@ -177,7 +205,6 @@ const AdminDashboard = ({
               {isBulkUploading ? 'INJECTING...' : 'SELECT FILE'}
             </label>
             <br />
-            {/* Added your requested export button here */}
             <button onClick={exportDatabaseLocal} style={{ marginTop: '15px', background: 'transparent', border: '1px solid #10b981', color: '#10b981', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
               EXPORT ENTIRE DB
             </button>
@@ -229,9 +256,20 @@ const AdminDashboard = ({
       {/* 2. USER DIRECTORY TAB */}
       {adminTab === 'users' && (
           <div>
-            <button onClick={fetchAllAppUsers} disabled={isFetchingUsers} style={{ width: '100%', padding: '15px', background: '#1e293b', border: '1px solid #3b82f6', color: '#fff', borderRadius: '12px', cursor: 'pointer', marginBottom: '20px' }}>
-              {isFetchingUsers ? 'SCANNING...' : 'LOAD ALL USERS'}
-            </button>
+            <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', flexWrap: 'wrap' }}>
+              <button onClick={fetchAllAppUsers} disabled={isFetchingUsers} style={{ flex: '1 1 200px', padding: '15px', background: '#1e293b', border: '1px solid #3b82f6', color: '#fff', borderRadius: '12px', cursor: 'pointer' }}>
+                {isFetchingUsers ? 'SCANNING...' : 'LOAD ALL USERS'}
+              </button>
+              {/* 👉 NEW: SEARCH BAR */}
+              <input 
+                type="text" 
+                placeholder="Search by name or email..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ flex: '2 1 300px', padding: '15px', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '12px', outline: 'none' }}
+              />
+            </div>
+
             <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid #f59e0b', padding: '15px', borderRadius: '12px', marginBottom: '20px' }}>
             <h4 style={{ color: '#f59e0b', margin: '0 0 10px 0' }}>Broadcast Global Exam</h4>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -246,7 +284,7 @@ const AdminDashboard = ({
               <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '20px' }}>
                 <button onClick={() => setSelectedUser(null)} style={{ background: 'transparent', color: '#94a3b8', border: 'none', cursor: 'pointer', marginBottom: '15px' }}>← Back to List</button>
                 <h3 style={{ color: '#fff', margin: '0 0 5px 0' }}>{selectedUser.displayName || selectedUser.email}</h3>
-                <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0 0 20px 0' }}>Status: {selectedUser.isPremium ? 'Premium' : 'Standard'} | Locked: {selectedUser.isLocked ? 'YES 🔒' : 'NO'}</p>
+                <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0 0 20px 0' }}>Status: {selectedUser.isPremium ? 'Premium ⭐' : 'Standard'} | Locked: {selectedUser.isLocked ? 'YES 🔒' : 'NO'}</p>
 
                 {/* Direct Message */}
                 <div style={{ marginBottom: '20px' }}>
@@ -256,17 +294,19 @@ const AdminDashboard = ({
 
                 {/* God Mode Buttons */}
                 <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
-                    {/* 👉 NEW ADMIN BUTTON */}
                   <button onClick={handleToggleAdmin} style={{ background: selectedUser.isAdmin ? '#334155' : '#a855f7', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
                     {selectedUser.isAdmin ? 'REVOKE ADMIN' : 'MAKE ADMIN 👑'}
+                  </button>
+
+                  {/* 👉 NEW: MAKE PREMIUM BUTTON IN THE DOSSIER */}
+                  <button onClick={handleMakePremium} style={{ background: selectedUser.isPremium ? '#334155' : '#10b981', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                    {selectedUser.isPremium ? 'REVOKE PREMIUM' : 'GRANT PREMIUM ⭐'}
                   </button>
 
                   <button onClick={handleToggleLock} style={{ background: selectedUser.isLocked ? '#10b981' : '#f59e0b', color: '#000', border: 'none', padding: '10px 15px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
                     {selectedUser.isLocked ? 'UNLOCK ACCOUNT' : 'LOCK ACCOUNT'}
                   </button>
                   <button onClick={handleResetAccount} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>WIPE DATA</button>
-                
-                  
                 </div>
 
                 {/* Exam Scores */}
@@ -281,15 +321,22 @@ const AdminDashboard = ({
                 )}
               </div>
             ) : (
-              /* The User List */
+              /* The User List (Now using filteredUsers) */
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '15px' }}>
-                {allAppUsers.map(u => (
-                  <div key={u.id} onClick={() => handleSelectUser(u)} style={{ background: '#1e293b', padding: '15px', borderRadius: '12px', borderLeft: `4px solid ${u.isPremium ? '#f59e0b' : '#334155'}`, cursor: 'pointer' }}>
-                    <p style={{ margin: '0 0 5px 0', color: '#fff', fontWeight: 'bold' }}>{u.displayName || u.email || 'Unknown Scholar'}</p>
-                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.8rem' }}>Exams Taken: {u.totalExamsTaken || 0}</p>
-                    {u.isLocked && <p style={{ color: '#ef4444', fontSize: '0.8rem', margin: '5px 0 0 0', fontWeight: 'bold' }}>🔒 LOCKED</p>}
-                  </div>
-                ))}
+                {filteredUsers.length === 0 && searchTerm ? (
+                  <p style={{ color: '#94a3b8' }}>No users found matching "{searchTerm}"</p>
+                ) : (
+                  filteredUsers.map(u => (
+                    <div key={u.id} onClick={() => handleSelectUser(u)} style={{ background: '#1e293b', padding: '15px', borderRadius: '12px', borderLeft: `4px solid ${u.isPremium ? '#10b981' : '#334155'}`, cursor: 'pointer' }}>
+                      <p style={{ margin: '0 0 5px 0', color: '#fff', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
+                        {u.displayName || u.email || 'Unknown Scholar'}
+                        {u.isPremium && <span style={{color: '#10b981', fontSize: '0.8rem'}}>⭐</span>}
+                      </p>
+                      <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.8rem' }}>Exams Taken: {u.totalExamsTaken || 0}</p>
+                      {u.isLocked && <p style={{ color: '#ef4444', fontSize: '0.8rem', margin: '5px 0 0 0', fontWeight: 'bold' }}>🔒 LOCKED</p>}
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>

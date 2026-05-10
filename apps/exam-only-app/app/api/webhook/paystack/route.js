@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
-import { doc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import crypto from 'crypto'; // 👈 Added for security hash
+import { doc, updateDoc, collection, query, where, getDocs, arrayUnion } from 'firebase/firestore';
 // Verify this path is correct for your monorepo structure
 import { db } from '../../../../../../packages/ui/src/firebase'; 
 import { Resend } from 'resend';
 
 export async function POST(req) {
-  // 1. INITIALIZE INSIDE POST: This prevents the Vercel Build Error
+  // 1. INITIALIZE RESEND
   const apiKey = process.env.RESEND_API_KEY;
   
   if (!apiKey) {
     console.error("❌ CONFIG ERROR: RESEND_API_KEY is not defined in Vercel Environment Variables.");
-    // We return a 200 to Paystack so they stop retrying, but log the error for us
     return NextResponse.json({ error: "Email configuration missing" }, { status: 200 });
   }
 
@@ -19,11 +19,28 @@ export async function POST(req) {
   // 2. PAYSTACK SECURITY CHECK
   const signature = req.headers.get('x-paystack-signature');
   if (!signature) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized: No signature" }, { status: 401 });
   }
 
   try {
-    const body = await req.json();
+    // ⚠️ CRITICAL FIX: Must read as raw text to verify the cryptographic hash!
+    const rawBody = await req.text();
+    
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      console.error("❌ CONFIG ERROR: PAYSTACK_SECRET_KEY is missing.");
+      return NextResponse.json({ error: "Server config error" }, { status: 500 });
+    }
+
+    // Mathematically prove this request actually came from Paystack
+    const hash = crypto.createHmac('sha512', secret).update(rawBody).digest('hex');
+    if (hash !== signature) {
+      console.error("❌ SECURITY ALERT: Fake webhook attempt blocked.");
+      return NextResponse.json({ error: "Unauthorized: Invalid signature" }, { status: 401 });
+    }
+
+    // Now it's safe to parse the JSON
+    const body = JSON.parse(rawBody);
 
     // 3. PROCESS SUCCESSFUL CHARGE
     if (body.event === 'charge.success') {
@@ -44,7 +61,15 @@ export async function POST(req) {
           isPremium: true,
           accountTier: amountPaid >= 6000 ? "Yearly Elite" : "Monthly Pro",
           premiumSince: new Date().toISOString(),
-          lastPaymentReference: body.data.reference
+          lastPaymentReference: body.data.reference,
+          // Added this so their in-app notification center gets updated too!
+          notifications: arrayUnion({
+            id: Date.now().toString(),
+            title: "Premium Activated 🏆",
+            message: `Your payment was verified. Welcome to Drill Pro!`,
+            date: new Date().toISOString(),
+            read: false
+          })
         });
         
         console.log(`✅ DB UPGRADE: ${email} is now Premium.`);
@@ -52,7 +77,7 @@ export async function POST(req) {
         // 6. SEND WELCOME EMAIL VIA RESEND
         try {
           await resend.emails.send({
-            from: 'Drill Pro <onboarding@resend.dev>',
+            from: 'Drill Pro <onboarding@resend.dev>', // Change to your verified domain later!
             to: [email],
             subject: 'Drill Pro Premium Activated 🚀',
             html: `
