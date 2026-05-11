@@ -4,17 +4,18 @@ import { BellRing, Bell } from 'lucide-react';
 
 const NotificationCenter = ({ notifications, markAsRead }) => {
   
-  // Initialize OneSignal when they open this page
   useEffect(() => {
+    // 1. Initialize quietly in the background. No pop-ups!
     OneSignal.init({
-      appId: "1c36ab6b-1eb5-418f-9cb8-cd755fdd3245", // 👈 Paste your App ID from OneSignal here
+      appId: "15f1f97f-d972-4982-b3a6-9405b8841015", 
       allowLocalhostAsSecureOrigin: true,
     });
   }, []);
 
-  const handleEnablePush = () => {
-    // This triggers the browser's permission popup!
-    OneSignal.Slidedown.promptPush();
+  const handleEnablePush = async () => {
+    // 2. THE FIX: This triggers the quiet, native browser permission
+    // only when they actually click the button. No spammy slide-down ad.
+    await OneSignal.Notifications.requestPermission();
   };
 
   return (
@@ -25,7 +26,6 @@ const NotificationCenter = ({ notifications, markAsRead }) => {
         <h2 style={{ color: '#fff', margin: 0, fontSize: '1.8rem' }}>Notifications</h2>
       </div>
 
-      {/* 👉 THE ONESIGNAL OPT-IN BANNER */}
       <div style={{ background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(59, 130, 246, 0.1))', border: '1px solid #38bdf8', padding: '20px', borderRadius: '12px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
         <div>
           <h4 style={{ color: '#38bdf8', margin: '0 0 5px 0', fontSize: '1.1rem' }}>Study Reminders</h4>
@@ -36,6 +36,7 @@ const NotificationCenter = ({ notifications, markAsRead }) => {
         </button>
       </div>
 
+      {/* ... your existing notification list code below ... */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {notifications.length === 0 ? (
           <p style={{ color: '#64748b', textAlign: 'center', padding: '40px', border: '1px dashed #334155', borderRadius: '12px' }}>No new notifications.</p>
