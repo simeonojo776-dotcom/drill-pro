@@ -34,6 +34,13 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [isDeleting, setIsDeleting] = useState(false);
   const [showPremiumModal, setShowPremiumModal] = useState(false); 
 
+  // 👉 NEW: EXAM BEHAVIOR & FILTER STATES
+  const [shuffleQuestions, setShuffleQuestions] = useState(true);
+  const [shuffleOptions, setShuffleOptions] = useState(true);
+  const [questionSource, setQuestionSource] = useState("all"); 
+  const [strictMode, setStrictMode] = useState(true);
+  const [instantFeedback, setInstantFeedback] = useState(false);
+
   // --- LIVE STATS & TIMETABLE STATE ---
   const [liveStats, setLiveStats] = useState({
     totalExams: 0,
@@ -122,13 +129,11 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
 
   const [isAdmin, setIsAdmin] = useState(false);
   // --- GHOST ADMIN LISTENER ---
- // --- GHOST ADMIN LISTENER ---
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "system", "ghost_admin"), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.lastInjection) {
-          // Check if the admin already dismissed this exact update
           const dismissedDate = localStorage.getItem('dismissedGhostAlert');
           if (dismissedDate === data.lastInjection) {
              setGhostNotification(null);
@@ -176,15 +181,12 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     const unsubscribe = onSnapshot(userRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        // 👉 PASTE THIS EXACTLY HERE:
         if (data.isLocked) {
           setIsLockedOut(true);
         } else {
           setIsLockedOut(false);
         }
 
-       // 👉 THE ROLE UPGRADE: 
-        // Admins automatically get Premium privileges. Normal users only get it if they paid.
         setIsPremium(data.isPremium || data.isAdmin || false); 
         setIsAdmin(data.isAdmin || false);
         
@@ -378,7 +380,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       
       const shareUrl = `${window.location.origin}${window.location.pathname}?examCode=${docRef.id}`;
       
-      // Upgraded message and changed "Access Code" to "Password"
       const shareText = `You've been invited to a private CBT session by ${profileName || 'a scholar'}. 📝\n\nPassword: ${docRef.id}\n\nTap the link below to start your exam instantly:`;
 
       if (navigator.share) {
@@ -395,7 +396,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
 
       const copyToClipboard = () => {
         const textArea = document.createElement("textarea");
-        // The extra \n\n guarantees the URL is completely isolated so WhatsApp makes it clickable
         textArea.value = `${shareText}\n\n${shareUrl}`; 
         textArea.style.position = "fixed";
         textArea.style.left = "-999999px";
@@ -465,7 +465,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
  const fetchAllAppUsers = async () => {
   setIsFetchingUsers(true);
   try {
-    // This grabs EVERY document in the users collection
     const querySnapshot = await getDocs(collection(db, "users")); 
     const users = [];
     querySnapshot.forEach((doc) => {
@@ -491,7 +490,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     finally { setIsFetchingPending(false); }
   };
 
-  // FIXED SINGLE EXPORT FUNCTION
   const exportDatabaseLocal = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, "official_cbt_bank"));
@@ -572,11 +570,18 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   useEffect(() => { buildFolderTree(); }, []);
 
   const toggleSubTopic = (sub) => { setSelectedSubTopics(prev => prev.includes(sub) ? prev.filter(s => s !== sub) : [...prev, sub]); };
-  const toggleEntireFolder = (subTopicsArray) => {
-    const allSelected = subTopicsArray.every(sub => selectedSubTopics.includes(sub));
-    if (allSelected) { setSelectedSubTopics(prev => prev.filter(s => !subTopicsArray.includes(s))); } 
-    else { setSelectedSubTopics(prev => Array.from(new Set([...prev, ...subTopicsArray]))); }
+  
+  // 👉 REWRITTEN: "Select All" folder logic matching your new UI
+  const toggleEntireFolder = (folderName) => {
+    const folderSubTopics = subjectHierarchy[folderName] || [];
+    const allSelected = folderSubTopics.every(sub => selectedSubTopics.includes(sub));
+    if (allSelected) { 
+      setSelectedSubTopics(prev => prev.filter(s => !folderSubTopics.includes(s))); 
+    } else { 
+      setSelectedSubTopics(prev => Array.from(new Set([...prev, ...folderSubTopics]))); 
+    }
   };
+
   const toggleFlag = (idx) => {
     setFlaggedQuestions(prev => {
       const next = new Set(prev);
@@ -644,8 +649,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     reader.readAsText(file);
   };
   
-
-  // --- USER FORGE LOGIC ---
   const handleUserForgeSubmit = async () => {
     if (!forgeData.q || !forgeData.optA || !forgeData.optB || !forgeData.answer || !user) {
       alert("⚠️ Please fill in the question, at least options A & B, and the correct answer.");
@@ -672,7 +675,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     finally { setIsSubmittingForge(false); }
   };
 
-  // --- ADMIN APPROVAL LOGIC ---
   const approveQuestion = async (pq) => {
     try {
       const newDoc = { subject: pq.subject, subTopic: pq.subTopic || pq.subject, q: pq.q, options: pq.options, answer: pq.answer, author: pq.userName };
@@ -723,52 +725,87 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     }
   };
 
- const handleStartOfficialExam = async () => {
+ // 👉 NEW: The Report Function
+  const handleReportQuestion = async (question, reason) => {
+    try {
+      await addDoc(collection(db, "reported_questions"), {
+        questionId: question.id || "unknown", // Now includes the exact DB ID
+        questionText: question.q,
+        subject: question.subject,
+        subTopic: question.subTopic,
+        reportedBy: user?.uid || "unknown",
+        reason: reason,
+        timestamp: new Date().toISOString(),
+        status: 'pending' // Admins can review this later
+      });
+      alert("🚨 Question reported to the Admin Forge for review. Thank you!");
+    } catch (e) {
+      alert("❌ Failed to report question. Please check your connection.");
+    }
+  };
+
+  // 👉 UPDATED: 10x Faster Fetching Engine
+  const handleStartOfficialExam = async () => {
     if (selectedSubTopics.length === 0) { alert("⚠️ Please select at least one Official Subject Bank first!"); return; }
 
-    // 1. Calculate how many questions they are asking for
     const currentCount = dailyUsage?.count || 0;
-    let finalQuestionCount = questionCount === 'all' ? 50 : parseInt(questionCount); // Cap "all" at 50 for math purposes
+    let finalQuestionCount = questionCount === 'all' ? 50 : parseInt(questionCount); 
 
-   // 2. THE STRICT FREEMIUM FIREWALL
     if (!isPremium) {
       if (currentCount >= 40) {
         alert("🔒 You have reached your daily limit of 40 free questions.");
         setShowPremiumModal(true);
         return; 
       }
-      
       const left = 40 - currentCount;
-      // FIX: If they ask for more than they have left, BLOCK and UPSELL!
       if (finalQuestionCount > left) {
         alert(`🔒 You only have ${left} free questions left today, but you requested ${finalQuestionCount}. Upgrade to Brilliance Pro to unlock unlimited questions!`);
         setShowPremiumModal(true);
-        return; // Stops the exam and forces the paywall
+        return; 
       }
     }
 
-    // 3. START FETCHING
     setIsFetchingExam(true);
     try {
       let allQuestions = [];
-      for (const sub of selectedSubTopics) {
-        const q = query(collection(db, "official_cbt_bank"), where("subTopic", "==", sub));
-        const querySnapshot = await getDocs(q);
-        querySnapshot.forEach((doc) => { allQuestions.push(doc.data()); });
-      }
       
+      // 🚀 THE SPEED UPGRADE: Chunking queries into parallel batches of 10
+      const chunks = [];
+      for (let i = 0; i < selectedSubTopics.length; i += 10) {
+          chunks.push(selectedSubTopics.slice(i, i + 10));
+      }
+
+      const queryPromises = chunks.map(chunk => {
+          const q = query(collection(db, "official_cbt_bank"), where("subTopic", "in", chunk));
+          return getDocs(q);
+      });
+
+      const snapshots = await Promise.all(queryPromises);
+      snapshots.forEach(snap => {
+          snap.forEach(doc => {
+              allQuestions.push({ id: doc.id, ...doc.data() }); // Grabbing the document ID is crucial for reporting!
+          });
+      });
+      
+     
+
       if (allQuestions.length === 0) { 
-        alert(`No questions found for the selected subjects!`); 
+        alert(`No questions found for the selected subjects and data source!`); 
         setIsFetchingExam(false); 
         return; 
       }
       
-      // Shuffle and slice to the correct adjusted count
-      const shuffledQuestions = allQuestions.sort(() => 0.5 - Math.random());
-      const finalExamPayload = shuffledQuestions.slice(0, finalQuestionCount);
+      let processedQuestions = allQuestions;
+      if (shuffleQuestions) {
+         processedQuestions = processedQuestions.sort(() => 0.5 - Math.random());
+      }
+      
+      const finalExamPayload = processedQuestions.slice(0, finalQuestionCount);
       
       setActiveExamQuestions(finalExamPayload);
-      setCbtTimeLeft(examDuration); 
+      
+      // 👉 NEW: Support for 'untimed' exams
+      setCbtTimeLeft(examDuration === 0 ? 'untimed' : examDuration); 
       setFlaggedQuestions(new Set());
       setCbtAnswers({});
       setCbtIndex(0);
@@ -829,7 +866,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   };
 
  const markAsRead = async (notifId) => {
-    // Permanently kill the ghost alert for this session
     if (notifId === 'ghost_alert') {
       if (ghostNotification?.lastInjection) {
         localStorage.setItem('dismissedGhostAlert', ghostNotification.lastInjection);
@@ -838,7 +874,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       return;
     }
     
-    // Normal notification logic
     const updatedNotifs = notifications.map(n => 
       n.id === notifId ? { ...n, read: true } : n
     );
@@ -876,7 +911,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         updates[`topicStats.${topic}.total`] = increment(stats.total);
       });
       
-      // FIX: Changed setDoc to updateDoc so the Command Center can read the nested stats!
       await updateDoc(userRef, updates);
     } catch (error) { console.error("🚨 Failed to save exam:", error); }
   };
@@ -926,7 +960,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     @keyframes spin { 100% { transform: rotate(360deg); } }
   `;
 
-  // 👉 PASTE THIS RIGHT BEFORE THE MAIN RETURN:
   if (isLockedOut) {
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#020617', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px', textAlign: 'center' }}>
@@ -954,7 +987,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           <Image src="/Drill (1).png" alt="Logo" width={32} height={32} style={{ borderRadius: '8px' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             
-          {/* REPLACE your bell icon with this: */}
             <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => setActiveModule('notifications')}>
               {(() => {
                 const totalUnread = unreadCount + (isAdmin && ghostNotification ? 1 : 0);
@@ -998,8 +1030,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       {activeModule === 'hub' && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '1000px', margin: '40px auto 100px auto', width: '100%', padding: '0 20px' }}>
           
-         
-
           {closestExam && daysToClosest <= 7 && (
             <div style={{ width: '100%', maxWidth: '1000px', background: daysToClosest <= 3 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)', border: `1px solid ${daysToClosest <= 3 ? '#ef4444' : '#f59e0b'}`, padding: '20px', borderRadius: '12px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
                 <div>
@@ -1151,7 +1181,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       )}
 
      {activeModule === 'notifications' && (() => {
-        // Dynamically inject the Ghost Admin alert for Admins only
         const displayNotifications = [...notifications];
         if (isAdmin && ghostNotification) {
           displayNotifications.unshift({
@@ -1212,6 +1241,19 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           setQuestionCount={setQuestionCount}
           handleStartOfficialExam={handleStartOfficialExam}
           isFetchingExam={isFetchingExam}
+          // 👉 NEW PROPS PASSED TO EXAM SETUP
+          shuffleQuestions={shuffleQuestions}
+          setShuffleQuestions={setShuffleQuestions}
+          shuffleOptions={shuffleOptions}
+          setShuffleOptions={setShuffleOptions}
+          questionSource={questionSource}
+          setQuestionSource={setQuestionSource}
+          strictMode={strictMode}
+          setStrictMode={setStrictMode}
+          instantFeedback={instantFeedback}
+          setInstantFeedback={setInstantFeedback}
+          isAdmin={isAdmin}
+          userData={user}
         />
       )}
 
@@ -1240,6 +1282,11 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           isReviewing={isReviewing} 
           setIsReviewing={setIsReviewing} 
           setActiveModule={setActiveModule} 
+          strictMode={strictMode}
+          instantFeedback={instantFeedback}
+          shuffleOptions={shuffleOptions}
+          isAdmin={isAdmin} // 👈 ADD THIS SO YOU CAN SEE THE BADGES
+          handleReportQuestion={handleReportQuestion} // 👈 ADD THIS SO THE BUTTON WORKS
         />
       )}
 

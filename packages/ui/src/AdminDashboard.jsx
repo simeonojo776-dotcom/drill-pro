@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Zap, Users, PenTool, Trash2, CheckCircle, XCircle } from 'lucide-react';
-import { query, collection, where, getDocs, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { Zap, Users, PenTool, Trash2, CheckCircle, XCircle, AlertTriangle, Filter, Search } from 'lucide-react';
+import { query, collection, where, getDocs, doc, updateDoc, arrayUnion, deleteDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 const AdminDashboard = ({
@@ -13,22 +13,58 @@ const AdminDashboard = ({
   handleLocalEdit, saveClassificationUpdate, updatingId
 }) => {
   
-  // ==========================================
-  // ALL STATES MUST BE INSIDE THE COMPONENT
-  // ==========================================
   const [selectedUser, setSelectedUser] = useState(null);
   const [userExamHistory, setUserExamHistory] = useState([]);
   const [adminMessage, setAdminMessage] = useState("");
   const [globalExamName, setGlobalExamName] = useState("");
   const [globalExamDate, setGlobalExamDate] = useState("");
-  
-  // 👉 NEW: SEARCH STATE FOR USERS
   const [searchTerm, setSearchTerm] = useState("");
 
-  // ==========================================
-  // ALL FUNCTIONS MUST BE INSIDE THE COMPONENT
-  // ==========================================
-  
+  const [reportedQuestions, setReportedQuestions] = useState([]);
+  const [isFetchingReports, setIsFetchingReports] = useState(false);
+
+  const [questionFilter, setQuestionFilter] = useState('all');
+  // 👉 NEW: STATE FOR QUESTION SEARCH
+  const [questionSearchTerm, setQuestionSearchTerm] = useState("");
+
+  const fetchReportedQuestions = async () => {
+    setIsFetchingReports(true);
+    try {
+      const q = query(collection(db, "reported_questions"));
+      const snapshot = await getDocs(q);
+      const reports = [];
+      snapshot.forEach(document => reports.push({ id: document.id, ...document.data() }));
+      setReportedQuestions(reports.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+    } catch (error) {
+      console.error("Failed to fetch reports:", error);
+    } finally {
+      setIsFetchingReports(false);
+    }
+  };
+
+  const handleDismissReport = async (reportId) => {
+    try {
+      await deleteDoc(doc(db, "reported_questions", reportId));
+      setReportedQuestions(prev => prev.filter(r => r.id !== reportId));
+    } catch (e) {
+      alert("❌ Failed to dismiss report.");
+    }
+  };
+
+  const handleDeleteReportedQuestion = async (reportId, questionId) => {
+    if(!window.confirm("⚠️ DANGER: Delete this question from the official bank AND dismiss the report?")) return;
+    try {
+      if(questionId && questionId !== "ID_MISSING" && questionId !== "unknown") {
+         await deleteDoc(doc(db, "official_cbt_bank", questionId));
+      }
+      await deleteDoc(doc(db, "reported_questions", reportId));
+      setReportedQuestions(prev => prev.filter(r => r.id !== reportId));
+      alert("🗑️ Question permanently deleted from bank.");
+    } catch(e) {
+      alert("❌ Failed to delete question.");
+    }
+  };
+
   const handleBroadcastGlobalExam = async () => {
     if (!globalExamName || !globalExamDate) {
       alert("Please enter a name and date for the global exam.");
@@ -129,7 +165,6 @@ const AdminDashboard = ({
     } catch (err) { alert("Action failed"); }
   };
 
-  // 👉 NEW: MAKE PREMIUM FUNCTION
   const handleMakePremium = async () => {
     const isCurrentlyPremium = selectedUser.isPremium || false;
     const confirmMsg = isCurrentlyPremium 
@@ -152,7 +187,6 @@ const AdminDashboard = ({
     } catch (err) { alert("Action failed"); }
   };
 
-  // 👉 NEW: FILTER LOGIC FOR SEARCH BAR
   const filteredUsers = allAppUsers.filter(user => {
     const searchLower = searchTerm.toLowerCase();
     const emailMatch = user.email && user.email.toLowerCase().includes(searchLower);
@@ -160,13 +194,30 @@ const AdminDashboard = ({
     return emailMatch || nameMatch;
   });
 
-  // ==========================================
-  // UI RENDERING STARTS HERE
-  // ==========================================
+  // 👉 UPDATED: MULTI-STAGE FILTER FOR BOTH SOURCE & TEXT/SUBJECT SEARCH
+  const displayedQuestions = liveQuestions.filter(q => {
+    // Stage 1: Bot vs User Filter
+    if (questionFilter === 'bot' && !q.isAiGenerated) return false;
+    if (questionFilter === 'user' && q.isAiGenerated) return false;
+
+    // Stage 2: Text Search Filter (Checks Question text, Subject, and Subtopic)
+    if (questionSearchTerm) {
+      const searchLower = questionSearchTerm.toLowerCase();
+      const qTextMatch = q.q && q.q.toLowerCase().includes(searchLower);
+      const qSubjectMatch = q.subject && q.subject.toLowerCase().includes(searchLower);
+      const qSubTopicMatch = q.subTopic && q.subTopic.toLowerCase().includes(searchLower);
+      
+      if (!qTextMatch && !qSubjectMatch && !qSubTopicMatch) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
   return (
     <div style={{ maxWidth: '1200px', margin: '20px auto 100px auto', width: '100%', padding: '0 20px' }}>
       
-      {/* MOBILE-FRIENDLY SCROLLABLE TABS */}
       <div style={{ display: 'flex', gap: '15px', marginBottom: '30px', borderBottom: '1px solid #1e293b', paddingBottom: '15px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <button onClick={() => setAdminTab('database')} style={{ background: adminTab === 'database' ? '#38bdf8' : 'transparent', color: adminTab === 'database' ? '#0f172a' : '#94a3b8', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
           <Zap size={18} /> QUESTION BANK
@@ -177,11 +228,32 @@ const AdminDashboard = ({
         <button onClick={() => { setAdminTab('forge'); fetchPendingQuestions(); }} style={{ background: adminTab === 'forge' ? '#f59e0b' : 'transparent', color: adminTab === 'forge' ? '#0f172a' : '#94a3b8', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
           <PenTool size={18} /> APPROVAL QUEUE
         </button>
+        <button onClick={() => { setAdminTab('reports'); fetchReportedQuestions(); }} style={{ background: adminTab === 'reports' ? '#ef4444' : 'transparent', color: adminTab === 'reports' ? '#0f172a' : '#94a3b8', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
+          <AlertTriangle size={18} /> REPORTED ISSUES
+        </button>
       </div>
 
       {/* 1. QUESTION BANK TAB */}
       {adminTab === 'database' && (
         <div style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
+          
+          {liveQuestions.length > 0 && (
+            <div style={{ display: 'flex', gap: '15px', marginBottom: '25px', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #38bdf8', padding: '15px', borderRadius: '12px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#38bdf8' }}>{liveQuestions.length}</div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', letterSpacing: '1px', marginTop: '5px' }}>TOTAL VAULTED</div>
+              </div>
+              <div style={{ flex: '1', background: 'rgba(139, 92, 246, 0.1)', border: '1px solid #c084fc', padding: '15px', borderRadius: '12px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#c084fc' }}>{liveQuestions.filter(q => q.isAiGenerated).length}</div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', letterSpacing: '1px', marginTop: '5px' }}>🤖 DRILL AI QUESTIONS</div>
+              </div>
+              <div style={{ flex: '1', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid #10b981', padding: '15px', borderRadius: '12px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#10b981' }}>{liveQuestions.filter(q => !q.isAiGenerated).length}</div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', letterSpacing: '1px', marginTop: '5px' }}>👤 USER UPLOADS</div>
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: '40px', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '20px', borderRadius: '12px' }}>
             <h3 style={{ color: '#ef4444', marginTop: 0, width: '100%' }}>Delete Subjects</h3>
             {Object.keys(subjectHierarchy).length === 0 ? <p style={{ color: '#64748b' }}>Empty database.</p> : (
@@ -213,15 +285,43 @@ const AdminDashboard = ({
           <div style={{ marginTop: '40px', borderTop: '2px dashed #334155', paddingTop: '40px', paddingBottom: '50px' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '15px' }}>
               <h3 style={{ color: '#38bdf8', margin: 0 }}>Live Editor</h3>
-              <button onClick={fetchLiveQuestions} disabled={isFetchingLive} style={{ background: '#334155', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-                {isFetchingLive ? 'PULLING...' : 'PULL LATEST'}
-              </button>
+              
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {liveQuestions.length > 0 && (
+                  <>
+                    {/* 👉 NEW: LIVE SEARCH BAR */}
+                    <div style={{ display: 'flex', alignItems: 'center', background: '#0f172a', border: '1px solid #334155', borderRadius: '6px', padding: '0 10px', minWidth: '220px' }}>
+                      <Search size={16} color="#94a3b8" />
+                      <input 
+                        type="text" 
+                        placeholder="Search subjects or questions..." 
+                        value={questionSearchTerm}
+                        onChange={(e) => { setQuestionSearchTerm(e.target.value); setCurrentPage(1); }}
+                        style={{ background: 'transparent', color: '#fff', border: 'none', padding: '10px', outline: 'none', width: '100%' }}
+                      />
+                    </div>
+                    
+                    {/* EXISTING FILTER */}
+                    <div style={{ display: 'flex', alignItems: 'center', background: '#0f172a', border: '1px solid #334155', borderRadius: '6px', padding: '0 10px' }}>
+                      <Filter size={16} color="#94a3b8" />
+                      <select value={questionFilter} onChange={(e) => { setQuestionFilter(e.target.value); setCurrentPage(1); }} style={{ background: 'transparent', color: '#fff', border: 'none', padding: '10px', outline: 'none', cursor: 'pointer' }}>
+                        <option value="all">View All Vaults</option>
+                        <option value="bot">🤖 Drill AI Only</option>
+                        <option value="user">👤 User Uploads Only</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+                <button onClick={fetchLiveQuestions} disabled={isFetchingLive} style={{ background: '#334155', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                  {isFetchingLive ? 'PULLING...' : 'PULL LATEST'}
+                </button>
+              </div>
             </div>
 
             {liveQuestions.length > 0 && (
               <>
                 <div style={{ overflowX: 'auto', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', color: '#fff', minWidth: '600px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', color: '#fff', minWidth: '700px' }}>
                     <thead style={{ background: '#1e293b' }}>
                       <tr>
                         <th style={{ padding: '15px', borderBottom: '1px solid #334155', width: '45%' }}>Question</th>
@@ -231,9 +331,15 @@ const AdminDashboard = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {liveQuestions.slice((currentPage - 1) * 10, currentPage * 10).map((q) => (
+                      {displayedQuestions.slice((currentPage - 1) * 10, currentPage * 10).map((q) => (
                         <tr key={q.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                          <td style={{ padding: '15px', fontSize: '0.85rem', color: '#cbd5e1' }}>{q.q.substring(0, 60)}...</td>
+                          <td style={{ padding: '15px', fontSize: '0.85rem', color: '#cbd5e1' }}>
+                            <span style={{ display: 'inline-block', marginBottom: '8px', fontSize: '0.65rem', background: q.isAiGenerated ? 'rgba(139, 92, 246, 0.2)' : 'rgba(56, 189, 248, 0.2)', color: q.isAiGenerated ? '#c084fc' : '#38bdf8', padding: '2px 8px', borderRadius: '10px', border: `1px solid ${q.isAiGenerated ? '#c084fc' : '#38bdf8'}` }}>
+                              {q.isAiGenerated ? '🤖 AI' : '👤 User'}
+                            </span>
+                            <br />
+                            {q.q.substring(0, 60)}...
+                          </td>
                           <td style={{ padding: '15px' }}><input type="text" value={q.subject || ""} onChange={(e) => handleLocalEdit(q.id, 'subject', e.target.value)} style={{ padding: '6px', background: '#020617', color: '#fff', border: '1px solid #334155', width: '100%' }} /></td>
                           <td style={{ padding: '15px' }}><input type="text" value={q.subTopic || ""} onChange={(e) => handleLocalEdit(q.id, 'subTopic', e.target.value)} style={{ padding: '6px', background: '#020617', color: '#fff', border: '1px solid #334155', width: '100%' }} /></td>
                           <td style={{ padding: '15px' }}><button onClick={() => saveClassificationUpdate(q.id, q.subject, q.subTopic)} disabled={updatingId === q.id} style={{ padding: '6px 12px', background: '#10b981', color: '#000', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>{updatingId === q.id ? '...' : 'SAVE'}</button></td>
@@ -241,12 +347,18 @@ const AdminDashboard = ({
                       ))}
                     </tbody>
                   </table>
+                  {displayedQuestions.length === 0 && (
+                    <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No questions found matching your search.</div>
+                  )}
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
-                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: '8px 15px', background: '#334155', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>PREV</button>
-                  <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Page {currentPage} of {Math.ceil(liveQuestions.length / 10)}</span>
-                  <button onClick={() => setCurrentPage(p => Math.min(Math.ceil(liveQuestions.length / 10), p + 1))} disabled={currentPage === Math.ceil(liveQuestions.length / 10)} style={{ padding: '8px 15px', background: '#334155', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>NEXT</button>
-                </div>
+                
+                {displayedQuestions.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
+                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: '8px 15px', background: '#334155', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>PREV</button>
+                    <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Page {currentPage} of {Math.ceil(displayedQuestions.length / 10)}</span>
+                    <button onClick={() => setCurrentPage(p => Math.min(Math.ceil(displayedQuestions.length / 10), p + 1))} disabled={currentPage === Math.ceil(displayedQuestions.length / 10)} style={{ padding: '8px 15px', background: '#334155', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>NEXT</button>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -260,7 +372,6 @@ const AdminDashboard = ({
               <button onClick={fetchAllAppUsers} disabled={isFetchingUsers} style={{ flex: '1 1 200px', padding: '15px', background: '#1e293b', border: '1px solid #3b82f6', color: '#fff', borderRadius: '12px', cursor: 'pointer' }}>
                 {isFetchingUsers ? 'SCANNING...' : 'LOAD ALL USERS'}
               </button>
-              {/* 👉 NEW: SEARCH BAR */}
               <input 
                 type="text" 
                 placeholder="Search by name or email..." 
@@ -279,26 +390,22 @@ const AdminDashboard = ({
             </div>
           </div>
 
-            {/* If a user is clicked, show the Dossier */}
             {selectedUser ? (
               <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '20px' }}>
                 <button onClick={() => setSelectedUser(null)} style={{ background: 'transparent', color: '#94a3b8', border: 'none', cursor: 'pointer', marginBottom: '15px' }}>← Back to List</button>
                 <h3 style={{ color: '#fff', margin: '0 0 5px 0' }}>{selectedUser.displayName || selectedUser.email}</h3>
                 <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0 0 20px 0' }}>Status: {selectedUser.isPremium ? 'Premium ⭐' : 'Standard'} | Locked: {selectedUser.isLocked ? 'YES 🔒' : 'NO'}</p>
 
-                {/* Direct Message */}
                 <div style={{ marginBottom: '20px' }}>
                   <input type="text" placeholder="Type a direct message to this user..." value={adminMessage} onChange={(e) => setAdminMessage(e.target.value)} style={{ width: '100%', padding: '10px', background: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '8px', marginBottom: '10px' }} />
                   <button onClick={handleSendDirectMessage} style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '8px 15px', borderRadius: '8px', cursor: 'pointer' }}>Send Alert</button>
                 </div>
 
-                {/* God Mode Buttons */}
                 <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
                   <button onClick={handleToggleAdmin} style={{ background: selectedUser.isAdmin ? '#334155' : '#a855f7', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
                     {selectedUser.isAdmin ? 'REVOKE ADMIN' : 'MAKE ADMIN 👑'}
                   </button>
 
-                  {/* 👉 NEW: MAKE PREMIUM BUTTON IN THE DOSSIER */}
                   <button onClick={handleMakePremium} style={{ background: selectedUser.isPremium ? '#334155' : '#10b981', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
                     {selectedUser.isPremium ? 'REVOKE PREMIUM' : 'GRANT PREMIUM ⭐'}
                   </button>
@@ -309,7 +416,6 @@ const AdminDashboard = ({
                   <button onClick={handleResetAccount} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>WIPE DATA</button>
                 </div>
 
-                {/* Exam Scores */}
                 <h4 style={{ color: '#fff', borderBottom: '1px solid #334155', paddingBottom: '10px' }}>Recent Exam Scores</h4>
                 {userExamHistory.length === 0 ? <p style={{ color: '#64748b' }}>No exams taken yet.</p> : (
                   userExamHistory.map(exam => (
@@ -321,7 +427,6 @@ const AdminDashboard = ({
                 )}
               </div>
             ) : (
-              /* The User List (Now using filteredUsers) */
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '15px' }}>
                 {filteredUsers.length === 0 && searchTerm ? (
                   <p style={{ color: '#94a3b8' }}>No users found matching "{searchTerm}"</p>
@@ -388,6 +493,59 @@ const AdminDashboard = ({
           </div>
         </div>
       )}
+
+      {/* 4. REPORTED ISSUES TAB */}
+      {adminTab === 'reports' && (
+        <div style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <h3 style={{ color: '#ef4444', margin: 0, fontSize: '1.5rem' }}>Reported Questions</h3>
+              <p style={{ color: '#94a3b8', margin: '5px 0 0 0', fontSize: '0.9rem' }}>Review issues flagged by users during exams.</p>
+            </div>
+            <button onClick={fetchReportedQuestions} disabled={isFetchingReports} style={{ background: '#1e293b', color: '#fff', border: '1px solid #334155', padding: '8px 15px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+              {isFetchingReports ? 'SCANNING...' : 'REFRESH REPORTS'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            {reportedQuestions.length === 0 && !isFetchingReports ? (
+              <div style={{ textAlign: 'center', padding: '40px', background: '#0f172a', borderRadius: '12px', border: '1px dashed #334155', color: '#64748b' }}>
+                Clean dashboard! No active reports right now.
+              </div>
+            ) : (
+              reportedQuestions.map(report => (
+                <div key={report.id} style={{ background: '#0f172a', padding: '20px', borderRadius: '12px', border: '1px solid #ef4444', position: 'relative' }}>
+                  
+                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '12px', borderRadius: '8px', marginBottom: '15px' }}>
+                    <p style={{ margin: 0, color: '#ef4444', fontWeight: 'bold', fontSize: '0.9rem', textTransform: 'uppercase' }}>User Reason:</p>
+                    <p style={{ margin: '5px 0 0 0', color: '#fff', fontSize: '1rem' }}>"{report.reason}"</p>
+                  </div>
+
+                  <div style={{ color: '#38bdf8', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '10px', textTransform: 'uppercase' }}>
+                    {report.subject} • {report.subTopic}
+                  </div>
+                  
+                  <p style={{ color: '#cbd5e1', fontSize: '1rem', margin: '0 0 20px 0', padding: '15px', background: '#020617', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                    {report.questionText}
+                  </p>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '15px' }}>
+                    <button onClick={() => handleDismissReport(report.id)} style={{ flex: '1 1 200px', padding: '10px', background: 'transparent', color: '#94a3b8', border: '1px solid #334155', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                      DISMISS REPORT (IGNORE)
+                    </button>
+                    <button onClick={() => handleDeleteReportedQuestion(report.id, report.questionId)} style={{ flex: '1 1 200px', padding: '10px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                      <Trash2 size={16} style={{ verticalAlign: 'middle', marginRight: '5px' }} />
+                      DELETE QUESTION FROM VAULT
+                    </button>
+                  </div>
+
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
