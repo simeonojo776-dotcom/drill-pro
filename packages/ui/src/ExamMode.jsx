@@ -1160,7 +1160,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         />
       )}
 
-      {activeModule === 'profile' && (
+     {activeModule === 'profile' && (
         <UserProfile 
           fileInputRef={fileInputRef}
           handleImageUpload={handleImageUpload}
