@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, getDocs, query, where, addDoc, writeBatch, doc, updateDoc, limit, onSnapshot, increment, setDoc, orderBy, arrayUnion, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from './firebase'; 
 import { X, Timer, Zap, BookOpen, RefreshCcw, ArrowLeft, Flag, Calculator, Trash2, Trophy, User, ShieldAlert, Settings, Camera, Share2, Users, PenTool, Flame, MessageSquarePlus, CheckCircle2 } from 'lucide-react';
-import { Haptics, ImpactStyle } from '@capacitor/haptics'; // 👈 NEW: Haptics Engine
+import { Haptics, ImpactStyle } from '@capacitor/haptics'; 
 import PremiumModal from './PremiumModal'; 
 import Image from 'next/image';
 import CommunityForge from './CommunityForge';
@@ -35,14 +35,16 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [isDeleting, setIsDeleting] = useState(false);
   const [showPremiumModal, setShowPremiumModal] = useState(false); 
 
-  // 👉 NEW: EXAM BEHAVIOR & FILTER STATES
+  // 👉 NEW: SUBJECT COMBO STATES
+  const [coreSubjects, setCoreSubjects] = useState([]); 
+  const [showAllSubjects, setShowAllSubjects] = useState(false);
+
   const [shuffleQuestions, setShuffleQuestions] = useState(true);
   const [shuffleOptions, setShuffleOptions] = useState(true);
   const [questionSource, setQuestionSource] = useState("all"); 
   const [strictMode, setStrictMode] = useState(true);
   const [instantFeedback, setInstantFeedback] = useState(false);
 
-  // 👉 NEW: UX & ENGAGEMENT STATES
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [streakCount, setStreakCount] = useState(0);
@@ -50,7 +52,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
 
-  // --- LIVE STATS & TIMETABLE STATE ---
   const [liveStats, setLiveStats] = useState({
     totalExams: 0,
     totalQuestions: 0,
@@ -68,7 +69,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [newExamDate, setNewExamDate] = useState('');
   const [newExamSubject, setNewExamSubject] = useState('GENERAL');
 
-  // --- IDENTITY & PROFILE STATE ---
   const [profileName, setProfileName] = useState('');
   const [profileBio, setProfileBio] = useState('');
   const [profilePic, setProfilePic] = useState('');
@@ -76,25 +76,20 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const fileInputRef = useRef(null);
 
-  // --- NOTIFICATION STATE ---
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // --- RAPID FIRE (FLASHCARD) STATE ---
   const [userFlashcards, setUserFlashcards] = useState([]);
   const [flashcardFilter, setFlashcardFilter] = useState('ALL');
   const [currentCardIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
 
-  // --- LEADERBOARD STATE ---
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [isLockedOut, setIsLockedOut] = useState(false);
 
-  // --- SHARED ARENA STATE ---
   const [joinCode, setJoinCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
 
-  // --- ADMIN & FORGE STATE ---
   const [adminTab, setAdminTab] = useState('database'); 
   const [allAppUsers, setAllAppUsers] = useState([]);
   const [isFetchingUsers, setIsFetchingUsers] = useState(false);
@@ -110,7 +105,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isFetchingExam, setIsFetchingExam] = useState(false);
 
-  // --- CBT SIMULATOR ENGINE ---
   const [cbtIndex, setCbtIndex] = useState(0);
   const [cbtAnswers, setCbtAnswers] = useState({}); 
   const [cbtTimeLeft, setCbtTimeLeft] = useState(600); 
@@ -118,19 +112,16 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [cbtScore, setCbtScore] = useState(0);
   const [isReviewing, setIsReviewing] = useState(false);
 
-  // --- USER FORGE SUBMISSION STATE ---
   const [isSubmittingForge, setIsSubmittingForge] = useState(false);
   const [forgeData, setForgeData] = useState({
     q: '', optA: '', optB: '', optC: '', optD: '', answer: '', subject: 'GENERAL'
   });
   const [isAiGenerating, setIsAiGenerating] = useState(false);
 
-  // 👉 NEW: SAFE HAPTIC TRIGGER
   const triggerHaptic = async (style = ImpactStyle.Light) => {
-    try { await Haptics.impact({ style }); } catch (e) { /* Fails silently on unsupported web browsers */ }
+    try { await Haptics.impact({ style }); } catch (e) { }
   };
 
-  // 👉 FEATURE 2B: IN-APP EXIT GUARDRAIL
   const handleProtectedNavigation = (actionCallback) => {
     if (activeModule === 'cbt' && !cbtFinished) {
       const confirmExit = window.confirm(
@@ -141,37 +132,28 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     actionCallback();
   };
 
-  // 👉 FEATURE 1: KEYBOARD SHORTCUTS
- // 👉 FEATURE 1: KEYBOARD SHORTCUTS (UPDATED WITH 'S' TO SUBMIT)
   useEffect(() => {
     const handleKeyDown = (event) => {
-      // Don't trigger if they aren't in an active test
       if (activeModule !== 'cbt' || cbtFinished || activeExamQuestions.length === 0) return;
-
-      // Disable shortcuts if user is actively typing in a text input (like the calculator)
       if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
 
       const key = event.key.toLowerCase();
       const currentQ = activeExamQuestions[cbtIndex];
 
-      // Option Selection (A-D or 1-4)
       if ((key === 'a' || key === '1') && currentQ.options[0]) handleSelectOption(currentQ.options[0]);
       if ((key === 'b' || key === '2') && currentQ.options[1]) handleSelectOption(currentQ.options[1]);
       if ((key === 'c' || key === '3') && currentQ.options[2]) handleSelectOption(currentQ.options[2]);
       if ((key === 'd' || key === '4') && currentQ.options[3]) handleSelectOption(currentQ.options[3]);
 
-      // Fast Navigation (Right Arrow or Enter = Next)
       if (event.key === 'ArrowRight' || event.key === 'Enter') {
         event.preventDefault(); 
         setCbtIndex(prev => Math.min(prev + 1, activeExamQuestions.length - 1));
       }
       
-      // Left Arrow = Previous
       if (event.key === 'ArrowLeft') {
         setCbtIndex(prev => Math.max(prev - 1, 0));
       }
 
-      // 👉 NEW: 'S' KEY TO SUBMIT EARLY
       if (key === 's') {
         event.preventDefault();
         const confirmSubmit = window.confirm("⚠️ Are you sure you want to submit your exam early?");
@@ -185,12 +167,11 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeModule, cbtFinished, cbtIndex, activeExamQuestions]);
 
-  // 👉 FEATURE 2A: BROWSER EXIT GUARDRAIL
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       if (activeModule === 'cbt' && !cbtFinished) {
         e.preventDefault();
-        e.returnValue = ''; // Required for browser prompt
+        e.returnValue = ''; 
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -218,7 +199,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
 
   const [isAdmin, setIsAdmin] = useState(false);
   
-  // --- GHOST ADMIN LISTENER ---
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "system", "ghost_admin"), (docSnap) => {
       if (docSnap.exists()) {
@@ -241,7 +221,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     return () => unsub();
   }, []);
 
-  // --- REAL-TIME APPROVAL QUEUE LISTENER ---
   useEffect(() => {
     const q = query(collection(db, "pending_questions")); 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -252,7 +231,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     return () => unsubscribe();
   }, []);
 
-  // --- INTERCEPT SHARED LINKS ON LOAD ---
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
@@ -264,7 +242,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     }
   }, []);
 
-  // --- UNIFIED REAL-TIME LISTENER FOR PROFILE, ANALYTICS & NOTIFICATIONS ---
   useEffect(() => {
     if (!user) return;
     const userRef = doc(db, "users", user.uid);
@@ -280,10 +257,12 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         setIsPremium(data.isPremium || data.isAdmin || false); 
         setIsAdmin(data.isAdmin || false);
         
-        // 👉 NEW: SMART ONBOARDING TRIGGER
         if (data.hasSeenOnboarding === undefined || data.hasSeenOnboarding === false) {
           setShowOnboarding(true);
         }
+
+        // 👉 NEW: Pulls their saved subject combo
+        if (data.coreSubjects) setCoreSubjects(data.coreSubjects);
 
         if (data.displayName) setProfileName(data.displayName);
         if (data.bio) setProfileBio(data.bio);
@@ -291,11 +270,9 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         if (data.flashcards) setUserFlashcards(data.flashcards);
         if (data.activityHistory) setActivityHistory(data.activityHistory);
         
-        // 👉 NEW: STREAK DATA LOAD
         setStreakCount(data.streak || 0);
         setLastActiveDate(data.lastActiveDate || null);
 
-        // Notifications
         const userNotifs = data.notifications || [];
         setNotifications(userNotifs);
         setUnreadCount(userNotifs.filter(n => !n.read).length);
@@ -350,7 +327,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     return () => unsubscribe();
   }, [user]);
 
-  // --- REAL-TIME LEADERBOARD LISTENER ---
   useEffect(() => {
     if (activeModule !== 'leaderboard') return;
     const usersRef = collection(db, "users");
@@ -363,7 +339,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     return () => unsubscribe();
   }, [activeModule]);
 
-  // --- TIMETABLE LOGIC ---
   const calculateDaysLeft = (dateString) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -401,7 +376,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const closestExam = upcomingExams.length > 0 ? upcomingExams[0] : null; 
   const daysToClosest = closestExam ? calculateDaysLeft(closestExam.date) : null;
 
-  // --- PROFILE MANAGEMENT ---
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -416,20 +390,19 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     reader.readAsDataURL(file);
   };
 
- const handleSaveProfile = async () => {
+  // 👉 NEW: Saving the Subject Combo to Firebase
+  const handleSaveProfile = async () => {
     if (!user || !user.uid) { alert("You must be logged in to save."); return; }
     if (!profileName.trim()) { alert("Username cannot be empty."); return; }
 
     setIsSavingProfile(true); 
     try {
-      // 👉 NEW: Check the database for duplicate usernames
       const usersRef = collection(db, "users");
       const q = query(usersRef, where("displayName", "==", profileName.trim()));
       const querySnapshot = await getDocs(q);
       
       let nameIsTaken = false;
       querySnapshot.forEach((docSnap) => {
-        // If a document exists with this name, BUT it's not the current user's document
         if (docSnap.id !== user.uid) {
           nameIsTaken = true;
         }
@@ -438,12 +411,15 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       if (nameIsTaken) {
         alert("❌ This username is already taken. Please choose another one.");
         setIsSavingProfile(false);
-        return; // Stops the save process
+        return; 
       }
 
-      // If the name is unique, proceed with saving
       const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, { displayName: profileName.trim(), bio: profileBio });
+      await updateDoc(userRef, { 
+        displayName: profileName.trim(), 
+        bio: profileBio,
+        coreSubjects: coreSubjects // 👉 Saves the selections
+      });
       alert("✅ Profile successfully updated!");
     } catch (error) {
       console.error("Error saving profile:", error);
@@ -475,7 +451,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     finally { setIsSavingProfile(false); }
   };
 
-  // --- EXAM SHARING ---
   const handleShareExam = async () => {
     if (activeExamQuestions.length === 0) return;
     try {
@@ -547,7 +522,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     setTimeout(() => setIsRefreshing(false), 600); 
   };
 
-  // --- DATABASE ADMIN & LOCAL EXPORT ---
   const fetchLiveQuestions = async () => {
     setIsFetchingLive(true);
     setCurrentPage(1); 
@@ -561,21 +535,21 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     finally { setIsFetchingLive(false); }
   };
 
- const fetchAllAppUsers = async () => {
-  setIsFetchingUsers(true);
-  try {
-    const querySnapshot = await getDocs(collection(db, "users")); 
-    const users = [];
-    querySnapshot.forEach((doc) => {
-      users.push({ id: doc.id, ...doc.data() });
-    });
-    setAllAppUsers(users);
-  } catch (error) {
-    console.error("Error fetching users: ", error);
-  } finally {
-    setIsFetchingUsers(false);
-  }
-};
+  const fetchAllAppUsers = async () => {
+   setIsFetchingUsers(true);
+   try {
+     const querySnapshot = await getDocs(collection(db, "users")); 
+     const users = [];
+     querySnapshot.forEach((doc) => {
+       users.push({ id: doc.id, ...doc.data() });
+     });
+     setAllAppUsers(users);
+   } catch (error) {
+     console.error("Error fetching users: ", error);
+   } finally {
+     setIsFetchingUsers(false);
+   }
+  };
 
   const fetchPendingQuestions = async () => {
     setIsFetchingPending(true);
@@ -842,7 +816,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     }
   };
 
-const handleStartOfficialExam = async () => {
+  const handleStartOfficialExam = async () => {
     if (selectedSubTopics.length === 0) { alert("⚠️ Please select at least one Official Subject Bank first!"); return; }
 
     const currentCount = dailyUsage?.count || 0;
@@ -891,16 +865,13 @@ const handleStartOfficialExam = async () => {
       
       let processedQuestions = allQuestions;
 
-      // 👉 THE BUG FIX: Shuffle the internal options array HERE so the keyboard matches the screen!
       if (shuffleOptions) {
          processedQuestions = processedQuestions.map(q => {
-            // Create a copy of the options and shuffle them
             const shuffledArray = [...q.options].sort(() => 0.5 - Math.random());
             return { ...q, options: shuffledArray };
          });
       }
       
-      // Shuffle the order of the questions themselves
       if (shuffleQuestions) {
          processedQuestions = processedQuestions.sort(() => 0.5 - Math.random());
       }
@@ -938,18 +909,17 @@ const handleStartOfficialExam = async () => {
       handleSubmitCBT(); 
     }
     return () => clearInterval(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeModule, cbtTimeLeft, cbtFinished, activeExamQuestions]);
 
   const handleSelectOption = (option) => {
     if (cbtFinished) return;
-    triggerHaptic(ImpactStyle.Light); // 👉 FEATURE 1: HAPTICS
+    triggerHaptic(ImpactStyle.Light); 
     setCbtAnswers(prev => ({ ...prev, [cbtIndex]: option }));
   };
 
   const handleSubmitCBT = () => {
     if (!cbtFinished) {
-      triggerHaptic(ImpactStyle.Heavy); // 👉 FEATURE 1: HAPTICS
+      triggerHaptic(ImpactStyle.Heavy); 
       let correct = 0;
       const newlyFailedCards = [];
       activeExamQuestions.forEach((q, idx) => { 
@@ -963,7 +933,7 @@ const handleStartOfficialExam = async () => {
     }
   };
 
- const markAsRead = async (notifId) => {
+  const markAsRead = async (notifId) => {
     if (notifId === 'ghost_alert') {
       if (ghostNotification?.lastInjection) {
         localStorage.setItem('dismissedGhostAlert', ghostNotification.lastInjection);
@@ -978,7 +948,7 @@ const handleStartOfficialExam = async () => {
     await updateDoc(doc(db, "users", user.uid), { notifications: updatedNotifs });
   };
 
- const saveExamResultsToCloud = async (finalScore, newlyFailedCards) => {
+  const saveExamResultsToCloud = async (finalScore, newlyFailedCards) => {
     if (!user) return; 
     try {
       const topicStats = {};
@@ -995,23 +965,22 @@ const handleStartOfficialExam = async () => {
       const userRef = doc(db, "users", user.uid);
       const todayStr = new Date().toISOString().split('T')[0];
       
-      // 👉 FEATURE 2: STREAK CALCULATION ENGINE
       let newStreak = streakCount;
       if (lastActiveDate) {
         const lastDate = new Date(lastActiveDate);
         const today = new Date(todayStr);
         const diffDays = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
-        if (diffDays === 1) newStreak += 1; // Examined yesterday! Keep it burning.
-        else if (diffDays > 1) newStreak = 1; // Missed a day. Reset.
+        if (diffDays === 1) newStreak += 1; 
+        else if (diffDays > 1) newStreak = 1; 
       } else {
-        newStreak = 1; // First exam ever!
+        newStreak = 1; 
       }
 
       const updates = {
         totalExamsTaken: increment(1),
         totalQuestionsAnswered: increment(activeExamQuestions.length),
         lastActiveDate: todayStr,
-        streak: newStreak, // Save the new streak
+        streak: newStreak, 
         dailyQuestionsAnswered: dailyUsage.date === todayStr ? increment(activeExamQuestions.length) : activeExamQuestions.length
       };
       
@@ -1026,7 +995,6 @@ const handleStartOfficialExam = async () => {
     } catch (error) { console.error("🚨 Failed to save exam:", error); }
   };
 
-  // 👉 FEATURE 3: SMART ONBOARDING
   const completeOnboarding = async () => {
     setShowOnboarding(false);
     if (user) {
@@ -1034,14 +1002,13 @@ const handleStartOfficialExam = async () => {
     }
   };
 
-  // 👉 FEATURE 4: DIRECT FEEDBACK LOOP
- const submitFeedback = async () => {
+  const submitFeedback = async () => {
     if (!feedbackText.trim() || !user) return;
     try {
       await addDoc(collection(db, "user_feedback"), {
         userId: user.uid,
         userName: profileName || 'Anonymous Scholar',
-        userEmail: user?.email || 'No email provided', // 👉 NEW: Grabs their actual email
+        userEmail: user?.email || 'No email provided', 
         message: feedbackText,
         timestamp: new Date().toISOString(),
         status: 'unread'
@@ -1070,7 +1037,6 @@ const handleStartOfficialExam = async () => {
     } else { setCalcDisplay(prev => (prev === 'Err' ? val : prev + val)); }
   };
   
-  // --- FLASHCARD FILTERING LOGIC ---
   const availableSubjects = ["ALL", ...Array.from(new Set(userFlashcards.map(c => c.subject)))];
   
   const filteredCards = flashcardFilter === 'ALL' 
@@ -1126,7 +1092,6 @@ const handleStartOfficialExam = async () => {
           <Image src="/Drill (1).png" alt="Logo" width={32} height={32} style={{ borderRadius: '8px' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             
-            {/* 👉 THE NEW STREAK ICON */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(239, 68, 68, 0.1)', padding: '5px 10px', borderRadius: '20px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
                <Flame size={18} color={streakCount > 0 ? "#ef4444" : "#64748b"} />
                <span style={{ color: streakCount > 0 ? "#ef4444" : "#64748b", fontWeight: 'bold', fontSize: '0.9rem' }}>{streakCount}</span>
@@ -1237,14 +1202,12 @@ const handleStartOfficialExam = async () => {
             </div>
           </div>
 
-        {/* ONLY SHOW ADMIN DASHBOARD TO DATABASE-VERIFIED ADMINS */}
           {isAdmin && (
             <button onClick={() => setActiveModule('admin')} style={{ width: '100%', padding: '15px', background: 'rgba(56, 189, 248, 0.1)', border: '1px dashed #38bdf8', color: '#38bdf8', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
               <Zap size={18} /> ADMIN DASHBOARD
             </button>
           )}
 
-          {/* 👉 THE FEEDBACK PORTAL */}
           <div onClick={() => setShowFeedbackModal(true)} style={{ width: '100%', padding: '20px', background: 'rgba(56, 189, 248, 0.05)', border: '1px dashed rgba(56, 189, 248, 0.4)', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: '#38bdf8', transition: 'all 0.2s', marginTop: '10px' }}>
             <MessageSquarePlus size={20} />
             <span style={{ fontWeight: 'bold' }}>Have an idea or found a bug? Tell the Developer!</span>
@@ -1252,7 +1215,6 @@ const handleStartOfficialExam = async () => {
         </div>
       )}
 
-      {/* USER FORGE MODULE (SUBMIT QUESTIONS) */}
       {activeModule === 'forge' && (
         <CommunityForge 
           forgeData={forgeData} 
@@ -1265,7 +1227,6 @@ const handleStartOfficialExam = async () => {
         />
       )}
 
-      {/* LIVE ANALYTICS MODULE & STRATEGIC TIMETABLE */}
       {activeModule === 'analytics' && (
         <CommandCenter 
           liveStats={liveStats}
@@ -1310,7 +1271,8 @@ const handleStartOfficialExam = async () => {
         />
       )}
 
-   {activeModule === 'profile' && (
+      {/* 👉 NEW: Passed coreSubjects props down to UserProfile */}
+      {activeModule === 'profile' && (
         <UserProfile 
           fileInputRef={fileInputRef}
           handleImageUpload={handleImageUpload}
@@ -1323,7 +1285,10 @@ const handleStartOfficialExam = async () => {
           isSavingProfile={isSavingProfile}
           handleWipeData={handleWipeData}
           totalExamsTaken={liveStats?.totalExamsTaken || 0} 
-          isPremium={false} 
+          isPremium={isPremium} 
+          coreSubjects={coreSubjects}
+          setCoreSubjects={setCoreSubjects}
+          subjectHierarchy={subjectHierarchy}
         />
       )}
 
@@ -1334,7 +1299,7 @@ const handleStartOfficialExam = async () => {
         />
       )}
 
-     {activeModule === 'notifications' && (() => {
+      {activeModule === 'notifications' && (() => {
         const displayNotifications = [...notifications];
         if (isAdmin && ghostNotification) {
           displayNotifications.unshift({
@@ -1348,7 +1313,6 @@ const handleStartOfficialExam = async () => {
         return <NotificationCenter notifications={displayNotifications} markAsRead={markAsRead} />;
       })()}
 
-      {/* ADMIN DASHBOARD */}
       {activeModule === 'admin' && (
         <AdminDashboard 
           adminTab={adminTab}
@@ -1378,7 +1342,7 @@ const handleStartOfficialExam = async () => {
         />
       )}
 
-      {/* EXAM SETUP */}
+      {/* 👉 NEW: Passed coreSubjects props down to ExamSetup */}
       {activeModule === 'examSetup' && (
         <ExamSetup 
           handleGlobalRefresh={handleGlobalRefresh}
@@ -1407,10 +1371,12 @@ const handleStartOfficialExam = async () => {
           setInstantFeedback={setInstantFeedback}
           isAdmin={isAdmin}
           userData={user}
+          coreSubjects={coreSubjects}
+          showAllSubjects={showAllSubjects}
+          setShowAllSubjects={setShowAllSubjects}
         />
       )}
 
-      {/* THE CBT SIMULATOR */}
       {activeModule === 'cbt' && (
         <CbtSimulator 
           cbtFinished={cbtFinished} 
@@ -1443,7 +1409,6 @@ const handleStartOfficialExam = async () => {
         />
       )}
 
-      {/* 👉 SMART ONBOARDING MODAL */}
       {showOnboarding && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(2, 6, 23, 0.95)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div style={{ background: '#0f172a', border: '1px solid #38bdf8', borderRadius: '20px', padding: '40px', maxWidth: '500px', width: '100%', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
@@ -1475,7 +1440,6 @@ const handleStartOfficialExam = async () => {
         </div>
       )}
 
-      {/* 👉 DIRECT FEEDBACK MODAL */}
       {showFeedbackModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(2, 6, 23, 0.8)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '16px', padding: '30px', maxWidth: '500px', width: '100%' }}>

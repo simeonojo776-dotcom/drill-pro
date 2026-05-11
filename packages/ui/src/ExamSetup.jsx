@@ -9,7 +9,9 @@ const ExamSetup = ({
   shuffleQuestions, setShuffleQuestions, shuffleOptions, setShuffleOptions,
   strictMode = true, setStrictMode,
   instantFeedback = false, setInstantFeedback,
-  userData, isAdmin
+  userData, isAdmin, coreSubjects, 
+  showAllSubjects, 
+  setShowAllSubjects
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [localName, setLocalName] = useState("CANDIDATE");
@@ -47,20 +49,45 @@ const ExamSetup = ({
         </button>
       </div>
 
-      {/* FOLDER SELECTION GRID */}
+      {/* FOLDER SELECTION GRID (WITH PERSONALIZED FILTERING) */}
       <div style={{ ...panelStyle, height: 'auto', marginBottom: '20px', padding: '15px 20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '10px' }}>
-          {Object.keys(subjectHierarchy).map(mainSubject => {
-            const allSelected = subjectHierarchy[mainSubject].every(sub => selectedSubTopics.includes(sub));
-            const isExpanded = expandedFolder === mainSubject;
-            return (
-              <div key={mainSubject} onClick={() => setExpandedFolder(mainSubject)} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '10px', borderRadius: '8px', background: isExpanded ? 'rgba(56, 189, 248, 0.1)' : '#0f172a', border: `1px solid ${isExpanded ? '#38bdf8' : '#1e293b'}`, transition: 'all 0.2s' }}>
-                <div style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${allSelected ? '#10b981' : '#334155'}`, background: allSelected ? '#10b981' : 'transparent', transition: 'all 0.2s' }} />
-                <span style={{ color: isExpanded ? '#38bdf8' : '#e2e8f0', fontSize: '0.85rem', fontWeight: 'bold' }}>{mainSubject}</span>
+        {(() => {
+          const allAvailableSubjects = Object.keys(subjectHierarchy);
+          const safeCoreSubjects = coreSubjects || [];
+          
+          // Only filter if they have chosen subjects and haven't clicked "Explore All"
+          const subjectsToDisplay = (safeCoreSubjects.length > 0 && !showAllSubjects) 
+            ? allAvailableSubjects.filter(sub => safeCoreSubjects.includes(sub))
+            : allAvailableSubjects;
+
+          return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '10px' }}>
+                {subjectsToDisplay.map(mainSubject => {
+                  const allSelected = subjectHierarchy[mainSubject].every(sub => selectedSubTopics.includes(sub));
+                  const isExpanded = expandedFolder === mainSubject;
+                  return (
+                    <div key={mainSubject} onClick={() => setExpandedFolder(mainSubject)} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '10px', borderRadius: '8px', background: isExpanded ? 'rgba(56, 189, 248, 0.1)' : '#0f172a', border: `1px solid ${isExpanded ? '#38bdf8' : '#1e293b'}`, transition: 'all 0.2s' }}>
+                      <div style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${allSelected ? '#10b981' : '#334155'}`, background: allSelected ? '#10b981' : 'transparent', transition: 'all 0.2s' }} />
+                      <span style={{ color: isExpanded ? '#38bdf8' : '#e2e8f0', fontSize: '0.85rem', fontWeight: 'bold' }}>{mainSubject}</span>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+
+              {safeCoreSubjects.length > 0 && (
+                <div style={{ textAlign: 'center', marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
+                  <button 
+                    onClick={() => setShowAllSubjects(!showAllSubjects)}
+                    style={{ background: 'transparent', color: '#94a3b8', border: '1px solid #334155', padding: '6px 15px', borderRadius: '50px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.75rem' }}
+                  >
+                    {showAllSubjects ? "HIDE UNUSED SUBJECTS" : "EXPLORE ALL SUBJECTS"}
+                  </button>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
@@ -133,7 +160,6 @@ const ExamSetup = ({
               <p style={{ color: '#64748b', fontSize: '11px', marginTop: '5px', textTransform: 'lowercase' }}>{userData?.email || "No Email"}</p>
             </div>
 
-            {/* 👉 THE UPGRADED SESSION ANALYTICS GRID */}
             <div style={{ width: '100%', background: 'rgba(56, 189, 248, 0.05)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '12px', padding: '15px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '12px', textTransform: 'uppercase' }}>
                 <Activity size={16} /> Exam Summary
