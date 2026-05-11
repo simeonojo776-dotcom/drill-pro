@@ -738,8 +738,10 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         timestamp: new Date().toISOString(),
         status: 'pending' // Admins can review this later
       });
-      alert("🚨 Question reported to the Admin Forge for review. Thank you!");
+    // 👉 THE UPDATED MESSAGE
+      alert("✅ Thank you! This question has been flagged and will be reviewed by our team shortly.");
     } catch (e) {
+      console.error("Report System Error:", e);
       alert("❌ Failed to report question. Please check your connection.");
     }
   };

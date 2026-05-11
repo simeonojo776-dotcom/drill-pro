@@ -1,48 +1,72 @@
 import React from 'react';
-import { Camera, Trash2 } from 'lucide-react';
+import { User, Camera, Shield, Bell, Trash2 } from 'lucide-react';
 
-const UserProfile = ({ 
-  fileInputRef, handleImageUpload, profilePic, 
-  profileName, setProfileName, profileBio, setProfileBio, 
-  handleSaveProfile, isSavingProfile, handleWipeData 
-}) => {
+const UserProfile = () => {
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', maxWidth: '500px', margin: '40px auto 100px auto', width: '100%', padding: '0 20px' }}>
+    <div style={{ maxWidth: '800px', margin: '40px auto', padding: '0 20px', color: '#f8fafc', fontFamily: 'system-ui, sans-serif' }}>
       
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '40px', background: '#0f172a', padding: '30px', borderRadius: '16px', border: '1px solid #1e293b' }}>
-        <input type="file" accept="image/*" ref={fileInputRef} style={{ display: 'none' }} onChange={handleImageUpload} />
-        <div 
-          onClick={() => fileInputRef.current.click()}
-          style={{ position: 'relative', width: '100px', height: '100px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', border: '2px dashed #38bdf8', marginBottom: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
-        >
-          {profilePic ? <img src={profilePic} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Camera size={32} color="#38bdf8" />}
-          <div style={{ position: 'absolute', bottom: 0, width: '100%', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '0.6rem', textAlign: 'center', padding: '4px 0', fontWeight: 'bold' }}>EDIT</div>
+      {/* HEADER OVERVIEW */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '40px' }}>
+        <div style={{ position: 'relative', width: '100px', height: '100px', borderRadius: '50%', background: '#334155', border: '2px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <Camera size={28} color="#94a3b8" />
         </div>
-        <h2 style={{ margin: 0, color: '#f8fafc', fontWeight: '600', fontSize: '1.8rem' }}>Identity Protocol</h2>
-        <p style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '5px' }}>Configure your operational presence.</p>
+        <h2 style={{ margin: '15px 0 5px 0', fontSize: '1.8rem', fontWeight: 'bold' }}>Profile Settings</h2>
+        <p style={{ color: '#94a3b8', margin: 0 }}>Manage your personal information and preferences.</p>
       </div>
 
-      <div style={{ background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', overflow: 'hidden', marginBottom: '30px' }}>
-        <div style={{ padding: '20px', borderBottom: '1px solid #1e293b' }}>
-          <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>Scholar Designation (Name)</label>
-          <input type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Enter your handle" style={{ WebkitUserSelect: 'text', userSelect: 'text', width: '100%', background: '#020617', border: '1px solid #334155', color: '#fff', padding: '12px', borderRadius: '6px', fontSize: '1rem', outline: 'none' }} />
+      <div style={{ display: 'grid', gap: '20px' }}>
+        
+        {/* SECTION 1: BASIC INFO */}
+        <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '12px', padding: '25px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', color: '#f8fafc', fontWeight: '600', fontSize: '1.1rem' }}>
+            <User size={20} color="#3b82f6" /> Personal Information
+          </div>
+          <label style={{ display: 'block', fontSize: '0.85rem', color: '#cbd5e1', fontWeight: '500', marginBottom: '8px' }}>Full Name</label>
+          <input type="text" defaultValue="admin" style={{ width: '100%', padding: '12px', background: '#0f172a', border: '1px solid #475569', color: '#fff', borderRadius: '8px', marginBottom: '20px', outline: 'none', fontSize: '1rem' }} />
+          
+          <label style={{ display: 'block', fontSize: '0.85rem', color: '#cbd5e1', fontWeight: '500', marginBottom: '8px' }}>Bio</label>
+          <textarea defaultValue="To prosper" rows="3" style={{ width: '100%', padding: '12px', background: '#0f172a', border: '1px solid #475569', color: '#fff', borderRadius: '8px', outline: 'none', resize: 'none', fontSize: '1rem' }} />
+          
+          <button style={{ marginTop: '20px', background: '#3b82f6', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'background 0.2s' }}>Save Changes</button>
         </div>
-        <div style={{ padding: '20px', borderBottom: '1px solid #1e293b' }}>
-          <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>Mission Statement (Bio)</label>
-          <textarea value={profileBio} onChange={(e) => setProfileBio(e.target.value)} placeholder="What are your academic goals?" rows={3} style={{ WebkitUserSelect: 'text', userSelect: 'text', width: '100%', background: '#020617', border: '1px solid #334155', color: '#fff', padding: '12px', borderRadius: '6px', fontSize: '1rem', outline: 'none', resize: 'vertical' }} />
-        </div>
-        <div style={{ padding: '15px 20px', background: 'rgba(56, 189, 248, 0.05)' }}>
-           <button onClick={handleSaveProfile} disabled={isSavingProfile} style={{ width: '100%', background: '#38bdf8', color: '#0f172a', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '1rem', cursor: isSavingProfile ? 'not-allowed' : 'pointer' }}>
-            {isSavingProfile ? 'SYNCING...' : 'SAVE IDENTITY'}
-          </button>
-        </div>
-      </div>
 
-      <div>
-         <label style={{ display: 'block', color: '#ef4444', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginLeft: '5px' }}>Danger Zone</label>
-         <button onClick={handleWipeData} disabled={isSavingProfile} style={{ width: '100%', background: 'transparent', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '15px', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.9rem', cursor: isSavingProfile ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', transition: 'background 0.2s' }}>
-          <Trash2 size={16} /> RESET ACADEMIC RECORD
-        </button>
+        {/* SECTION 2: PREFERENCES */}
+        <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '12px', padding: '25px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', color: '#f8fafc', fontWeight: '600', fontSize: '1.1rem' }}>
+            <Bell size={20} color="#10b981" /> App Preferences
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 0', borderBottom: '1px solid #334155' }}>
+            <div>
+              <p style={{ margin: 0, fontWeight: '500', color: '#f8fafc' }}>Study Reminders</p>
+              <p style={{ margin: '5px 0 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>Receive daily push notifications to keep your streak.</p>
+            </div>
+            <input type="checkbox" style={{ width: '20px', height: '20px', accentColor: '#10b981', cursor: 'pointer' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 0' }}>
+            <div>
+              <p style={{ margin: 0, fontWeight: '500', color: '#f8fafc' }}>Sound Effects</p>
+              <p style={{ margin: '5px 0 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>Play sounds when answering questions correctly.</p>
+            </div>
+            <input type="checkbox" defaultChecked style={{ width: '20px', height: '20px', accentColor: '#10b981', cursor: 'pointer' }} />
+          </div>
+        </div>
+
+        {/* SECTION 3: SECURITY & DANGER ZONE */}
+        <div style={{ background: '#1e293b', border: '1px solid #ef4444', borderRadius: '12px', padding: '25px' }}>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', color: '#ef4444', fontWeight: '600', fontSize: '1.1rem' }}>
+            <Shield size={20} /> Danger Zone
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+            <div>
+              <p style={{ margin: 0, fontWeight: '500', color: '#f8fafc' }}>Delete Account</p>
+              <p style={{ margin: '5px 0 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>Permanently wipe all your exam history and data.</p>
+            </div>
+            <button style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s' }}>
+              <Trash2 size={18} /> Delete Account
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
   );
