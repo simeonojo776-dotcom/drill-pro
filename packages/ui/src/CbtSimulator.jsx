@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import { Share2, Calculator, Flag, Timer, BookOpen, AlertTriangle, ShieldAlert } from 'lucide-react';
 
 const CbtSimulator = ({
@@ -10,20 +10,12 @@ const CbtSimulator = ({
   instantFeedback = false,
   shuffleOptions = false,
   isAdmin = false,
-  handleReportQuestion // 👉 NEW PROP: To process reports
+  handleReportQuestion 
 }) => {
 
-  const randomizedOptions = useMemo(() => {
-    if (!shuffleOptions || !activeExamQuestions) return null;
-    return activeExamQuestions.map(q => {
-      const shuffled = [...q.options].sort(() => 0.5 - Math.random());
-      return shuffled;
-    });
-  }, [activeExamQuestions, shuffleOptions]);
-
-  const currentOptionsToDisplay = shuffleOptions && randomizedOptions 
-    ? randomizedOptions[cbtIndex] 
-    : activeExamQuestions[cbtIndex]?.options;
+  // 👉 BUG FIX: We removed the `useMemo` double-shuffle. 
+  // We now trust the exactly array sent by ExamMode!
+  const currentOptionsToDisplay = activeExamQuestions[cbtIndex]?.options || [];
 
   const handleOptionClick = (option) => {
     if (cbtFinished) return;
@@ -72,7 +64,6 @@ const CbtSimulator = ({
             
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
               
-              {/* 👉 NEW REPORT BUTTON */}
               <button 
                 onClick={() => {
                   const reason = window.prompt("Why are you reporting this question? (e.g., Wrong answer, Typo, Out of Syllabus)");
@@ -128,7 +119,6 @@ const CbtSimulator = ({
             </div>
           )}
 
-         {/* 👉 INSTANT ADMIN BADGE ADDED HERE */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
             <div style={{ color: '#38bdf8', fontSize: '0.8rem', fontWeight: 'bold', letterSpacing: '1px', textTransform: 'uppercase' }}>
               {activeExamQuestions[cbtIndex].subTopic || activeExamQuestions[cbtIndex].subject}

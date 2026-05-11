@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Zap, Users, PenTool, Trash2, CheckCircle, XCircle, AlertTriangle, Filter, Search } from 'lucide-react';
+import { Zap, Users, PenTool, Trash2, CheckCircle, XCircle, AlertTriangle, Filter, Search, MessageSquare  } from 'lucide-react';
 import { query, collection, where, getDocs, doc, updateDoc, arrayUnion, deleteDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -12,7 +12,7 @@ const AdminDashboard = ({
   fetchLiveQuestions, isFetchingLive, liveQuestions, currentPage, setCurrentPage,
   handleLocalEdit, saveClassificationUpdate, updatingId
 }) => {
-  
+  const [feedbackInbox, setFeedbackInbox] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userExamHistory, setUserExamHistory] = useState([]);
   const [adminMessage, setAdminMessage] = useState("");
@@ -24,8 +24,36 @@ const AdminDashboard = ({
   const [isFetchingReports, setIsFetchingReports] = useState(false);
 
   const [questionFilter, setQuestionFilter] = useState('all');
-  // 👉 NEW: STATE FOR QUESTION SEARCH
   const [questionSearchTerm, setQuestionSearchTerm] = useState("");
+
+  // 👉 NEW: THE BUG BOUNTY REWARD SYSTEM
+  const rewardBugHunter = async (userId, userName) => {
+    if (!userId) {
+      alert("⚠️ Legacy feedback detected: No user ID attached to this message.");
+      return;
+    }
+    const confirmReward = window.confirm(`Give 1-Month Premium to ${userName} for their bug report?`);
+    if (!confirmReward) return;
+
+    try {
+      const userRef = doc(db, "users", userId);
+      await updateDoc(userRef, {
+        isPremium: true,
+        accountTier: "Premium", // Keep synced with your other systems
+        notifications: arrayUnion({
+          id: Date.now().toString(),
+          title: "Bug Bounty Rewarded! 🐛🏆",
+          message: "Your recent bug report was verified by the developers! As a massive thank you for helping improve the app, you've been granted Brilliance Pro status.",
+          date: new Date().toISOString(),
+          read: false
+        })
+      });
+      alert(`✅ Successfully granted Premium to ${userName} and sent them a notification!`);
+    } catch (error) {
+      console.error("Reward Error:", error);
+      alert("❌ Failed to reward user. Check your connection.");
+    }
+  };
 
   const fetchReportedQuestions = async () => {
     setIsFetchingReports(true);
@@ -62,6 +90,18 @@ const AdminDashboard = ({
       alert("🗑️ Question permanently deleted from bank.");
     } catch(e) {
       alert("❌ Failed to delete question.");
+    }
+  };
+
+  const fetchFeedback = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, "user_feedback"));
+      const fetched = [];
+      querySnapshot.forEach((doc) => { fetched.push({ id: doc.id, ...doc.data() }); });
+      // Sort newest first
+      setFeedbackInbox(fetched.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+    } catch (error) { 
+      console.error("Failed to fetch feedback:", error); 
     }
   };
 
@@ -194,13 +234,10 @@ const AdminDashboard = ({
     return emailMatch || nameMatch;
   });
 
-  // 👉 UPDATED: MULTI-STAGE FILTER FOR BOTH SOURCE & TEXT/SUBJECT SEARCH
   const displayedQuestions = liveQuestions.filter(q => {
-    // Stage 1: Bot vs User Filter
     if (questionFilter === 'bot' && !q.isAiGenerated) return false;
     if (questionFilter === 'user' && q.isAiGenerated) return false;
 
-    // Stage 2: Text Search Filter (Checks Question text, Subject, and Subtopic)
     if (questionSearchTerm) {
       const searchLower = questionSearchTerm.toLowerCase();
       const qTextMatch = q.q && q.q.toLowerCase().includes(searchLower);
@@ -211,7 +248,6 @@ const AdminDashboard = ({
         return false;
       }
     }
-
     return true;
   });
 
@@ -230,6 +266,9 @@ const AdminDashboard = ({
         </button>
         <button onClick={() => { setAdminTab('reports'); fetchReportedQuestions(); }} style={{ background: adminTab === 'reports' ? '#ef4444' : 'transparent', color: adminTab === 'reports' ? '#0f172a' : '#94a3b8', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
           <AlertTriangle size={18} /> REPORTED ISSUES
+        </button>
+        <button onClick={() => { setAdminTab('feedback'); fetchFeedback(); }} style={{ background: adminTab === 'feedback' ? '#8b5cf6' : 'transparent', color: adminTab === 'feedback' ? '#0f172a' : '#94a3b8', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
+          <MessageSquare size={18} /> FEEDBACK INBOX
         </button>
       </div>
 
@@ -289,7 +328,6 @@ const AdminDashboard = ({
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {liveQuestions.length > 0 && (
                   <>
-                    {/* 👉 NEW: LIVE SEARCH BAR */}
                     <div style={{ display: 'flex', alignItems: 'center', background: '#0f172a', border: '1px solid #334155', borderRadius: '6px', padding: '0 10px', minWidth: '220px' }}>
                       <Search size={16} color="#94a3b8" />
                       <input 
@@ -301,7 +339,6 @@ const AdminDashboard = ({
                       />
                     </div>
                     
-                    {/* EXISTING FILTER */}
                     <div style={{ display: 'flex', alignItems: 'center', background: '#0f172a', border: '1px solid #334155', borderRadius: '6px', padding: '0 10px' }}>
                       <Filter size={16} color="#94a3b8" />
                       <select value={questionFilter} onChange={(e) => { setQuestionFilter(e.target.value); setCurrentPage(1); }} style={{ background: 'transparent', color: '#fff', border: 'none', padding: '10px', outline: 'none', cursor: 'pointer' }}>
@@ -543,6 +580,37 @@ const AdminDashboard = ({
               ))
             )}
           </div>
+        </div>
+      )}
+      
+      {/* 5. FEEDBACK TAB */}
+      {adminTab === 'feedback' && (
+        <div style={{ padding: '20px' }}>
+          <h3 style={{ color: '#fff' }}>User Feedback & Bug Reports</h3>
+          {feedbackInbox.length === 0 ? (
+            <p style={{ color: '#94a3b8' }}>No feedback submitted yet.</p>
+          ) : (
+            feedbackInbox.map((msg) => (
+              <div key={msg.id} style={{ background: '#0f172a', border: '1px solid #334155', padding: '15px', borderRadius: '8px', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <div>
+                     <strong style={{ color: '#38bdf8' }}>{msg.userName}</strong>
+                     <span style={{ color: '#94a3b8', fontSize: '0.8rem', marginLeft: '10px' }}>({msg.userEmail})</span>
+                  </div>
+                  <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{new Date(msg.timestamp).toLocaleString()}</span>
+                </div>
+                <p style={{ color: '#e2e8f0', margin: '0 0 15px 0' }}>{msg.message}</p>
+                
+                {/* 👉 NEW: REWARD BUTTON */}
+                <button 
+                   onClick={() => rewardBugHunter(msg.userId, msg.userName)}
+                   style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid #10b981', padding: '8px 15px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem' }}
+                >
+                   Give Premium Reward 🏆
+                </button>
+              </div>
+            ))
+          )}
         </div>
       )}
 

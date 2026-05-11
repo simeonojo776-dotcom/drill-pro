@@ -36,16 +36,27 @@ const Leaderboard = ({ leaderboardData, user }) => {
             }
             const overallAcc = totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0;
             
+            // 👉 NEW: STREAK LOGIC
+            const streak = leader.streak || 0;
+            const isOnFire = streak >= 7;
+            const nameColor = isOnFire ? '#f59e0b' : '#fff'; // Gold if 7+ streak
+            
+            // 👉 NEW: GAMIFIED TITLES
             let rankTitle = "Initiate";
-            if (totalAnswered > 0) {
+            if (totalAnswered > 1000) rankTitle = "Jamb Master";
+            else if (totalAnswered > 500) rankTitle = "Academic Weapon";
+            else if (totalAnswered > 100) rankTitle = "CBT Veteran";
+            else if (totalAnswered > 0) {
                 if (overallAcc >= 80) rankTitle = "Elite Scholar";
                 else if (overallAcc >= 60) rankTitle = "Adept";
-                else rankTitle = "Novice";
+                else rankTitle = "Novice Scholar";
             }
+            if (leader.isAdmin) rankTitle = "System Architect"; // Top Tier Override
+
             let bestSubjectDisplay = bestSubj !== "N/A" ? bestSubj : "General";
 
             return (
-              <div key={leader.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: index === 0 ? 'rgba(245, 158, 11, 0.1)' : '#0f172a', border: `1px solid ${index === 0 ? '#f59e0b' : '#1e293b'}`, padding: '20px', borderRadius: '12px', flexWrap: 'wrap', gap: '15px' }}>
+              <div key={leader.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: index === 0 ? 'rgba(245, 158, 11, 0.1)' : '#0f172a', border: `1px solid ${(index === 0 || isOnFire) ? '#f59e0b' : '#1e293b'}`, padding: '20px', borderRadius: '12px', flexWrap: 'wrap', gap: '15px' }}>
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1, minWidth: '200px' }}>
                   <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: index === 0 ? '#f59e0b' : (index === 1 ? '#cbd5e1' : (index === 2 ? '#b45309' : '#64748b')), width: '30px' }}>
@@ -57,12 +68,13 @@ const Leaderboard = ({ leaderboardData, user }) => {
                   </div>
 
                   <div>
-                    <div style={{ fontSize: '1.1rem', color: '#fff', fontWeight: 'bold' }}>
+                    <div style={{ fontSize: '1.1rem', color: nameColor, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' }}>
                       {leader.displayName || "Anonymous Scholar"}
-                      {leader.id === user?.uid && <span style={{ marginLeft: '10px', fontSize: '0.7rem', background: '#38bdf8', color: '#0f172a', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle' }}>YOU</span>}
+                      {isOnFire && <span title={`${streak} Day Streak!`} style={{ fontSize: '1.1rem' }}>🔥</span>}
+                      {leader.id === user?.uid && <span style={{ marginLeft: '5px', fontSize: '0.7rem', background: '#38bdf8', color: '#0f172a', padding: '2px 6px', borderRadius: '4px', verticalAlign: 'middle' }}>YOU</span>}
                     </div>
                     <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '4px', letterSpacing: '0.5px' }}>
-                      {totalAnswered === 0 ? "No Exams Logged" : <><span style={{ color: '#38bdf8' }}>{rankTitle}</span> • {bestSubjectDisplay} Focus</>}
+                      {totalAnswered === 0 ? "No Exams Logged" : <><span style={{ color: isOnFire ? 'rgba(245, 158, 11, 0.8)' : '#38bdf8', fontWeight: 'bold', textTransform: 'uppercase' }}>{rankTitle}</span> • {bestSubjectDisplay} Focus</>}
                     </div>
                   </div>
                 </div>

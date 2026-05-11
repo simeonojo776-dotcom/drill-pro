@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, getDocs, query, where, addDoc, writeBatch, doc, updateDoc, limit, onSnapshot, increment, setDoc, orderBy, arrayUnion, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from './firebase'; 
-import { X, Timer, Zap, BookOpen, RefreshCcw, ArrowLeft, Flag, Calculator, Trash2, Trophy, User, ShieldAlert, Settings, Camera, Share2, Users, PenTool } from 'lucide-react';
+import { X, Timer, Zap, BookOpen, RefreshCcw, ArrowLeft, Flag, Calculator, Trash2, Trophy, User, ShieldAlert, Settings, Camera, Share2, Users, PenTool, Flame, MessageSquarePlus, CheckCircle2 } from 'lucide-react';
+import { Haptics, ImpactStyle } from '@capacitor/haptics'; // 👈 NEW: Haptics Engine
 import PremiumModal from './PremiumModal'; 
 import Image from 'next/image';
 import CommunityForge from './CommunityForge';
@@ -40,6 +41,14 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [questionSource, setQuestionSource] = useState("all"); 
   const [strictMode, setStrictMode] = useState(true);
   const [instantFeedback, setInstantFeedback] = useState(false);
+
+  // 👉 NEW: UX & ENGAGEMENT STATES
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(1);
+  const [streakCount, setStreakCount] = useState(0);
+  const [lastActiveDate, setLastActiveDate] = useState(null);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
 
   // --- LIVE STATS & TIMETABLE STATE ---
   const [liveStats, setLiveStats] = useState({
@@ -101,12 +110,92 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isFetchingExam, setIsFetchingExam] = useState(false);
 
+  // --- CBT SIMULATOR ENGINE ---
+  const [cbtIndex, setCbtIndex] = useState(0);
+  const [cbtAnswers, setCbtAnswers] = useState({}); 
+  const [cbtTimeLeft, setCbtTimeLeft] = useState(600); 
+  const [cbtFinished, setCbtFinished] = useState(false);
+  const [cbtScore, setCbtScore] = useState(0);
+  const [isReviewing, setIsReviewing] = useState(false);
+
   // --- USER FORGE SUBMISSION STATE ---
   const [isSubmittingForge, setIsSubmittingForge] = useState(false);
   const [forgeData, setForgeData] = useState({
     q: '', optA: '', optB: '', optC: '', optD: '', answer: '', subject: 'GENERAL'
   });
   const [isAiGenerating, setIsAiGenerating] = useState(false);
+
+  // 👉 NEW: SAFE HAPTIC TRIGGER
+  const triggerHaptic = async (style = ImpactStyle.Light) => {
+    try { await Haptics.impact({ style }); } catch (e) { /* Fails silently on unsupported web browsers */ }
+  };
+
+  // 👉 FEATURE 2B: IN-APP EXIT GUARDRAIL
+  const handleProtectedNavigation = (actionCallback) => {
+    if (activeModule === 'cbt' && !cbtFinished) {
+      const confirmExit = window.confirm(
+        "⚠️ EXAM IN PROGRESS: Are you sure you want to quit? Your current progress will be lost and will not be saved."
+      );
+      if (!confirmExit) return; 
+    }
+    actionCallback();
+  };
+
+  // 👉 FEATURE 1: KEYBOARD SHORTCUTS
+ // 👉 FEATURE 1: KEYBOARD SHORTCUTS (UPDATED WITH 'S' TO SUBMIT)
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Don't trigger if they aren't in an active test
+      if (activeModule !== 'cbt' || cbtFinished || activeExamQuestions.length === 0) return;
+
+      // Disable shortcuts if user is actively typing in a text input (like the calculator)
+      if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+
+      const key = event.key.toLowerCase();
+      const currentQ = activeExamQuestions[cbtIndex];
+
+      // Option Selection (A-D or 1-4)
+      if ((key === 'a' || key === '1') && currentQ.options[0]) handleSelectOption(currentQ.options[0]);
+      if ((key === 'b' || key === '2') && currentQ.options[1]) handleSelectOption(currentQ.options[1]);
+      if ((key === 'c' || key === '3') && currentQ.options[2]) handleSelectOption(currentQ.options[2]);
+      if ((key === 'd' || key === '4') && currentQ.options[3]) handleSelectOption(currentQ.options[3]);
+
+      // Fast Navigation (Right Arrow or Enter = Next)
+      if (event.key === 'ArrowRight' || event.key === 'Enter') {
+        event.preventDefault(); 
+        setCbtIndex(prev => Math.min(prev + 1, activeExamQuestions.length - 1));
+      }
+      
+      // Left Arrow = Previous
+      if (event.key === 'ArrowLeft') {
+        setCbtIndex(prev => Math.max(prev - 1, 0));
+      }
+
+      // 👉 NEW: 'S' KEY TO SUBMIT EARLY
+      if (key === 's') {
+        event.preventDefault();
+        const confirmSubmit = window.confirm("⚠️ Are you sure you want to submit your exam early?");
+        if (confirmSubmit) {
+          handleSubmitCBT();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeModule, cbtFinished, cbtIndex, activeExamQuestions]);
+
+  // 👉 FEATURE 2A: BROWSER EXIT GUARDRAIL
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (activeModule === 'cbt' && !cbtFinished) {
+        e.preventDefault();
+        e.returnValue = ''; // Required for browser prompt
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeModule, cbtFinished]);
 
   const generateAiQuestion = async () => {
     setIsAiGenerating(true);
@@ -128,6 +217,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   };
 
   const [isAdmin, setIsAdmin] = useState(false);
+  
   // --- GHOST ADMIN LISTENER ---
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "system", "ghost_admin"), (docSnap) => {
@@ -190,12 +280,21 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         setIsPremium(data.isPremium || data.isAdmin || false); 
         setIsAdmin(data.isAdmin || false);
         
+        // 👉 NEW: SMART ONBOARDING TRIGGER
+        if (data.hasSeenOnboarding === undefined || data.hasSeenOnboarding === false) {
+          setShowOnboarding(true);
+        }
+
         if (data.displayName) setProfileName(data.displayName);
         if (data.bio) setProfileBio(data.bio);
         if (data.profilePic) setProfilePic(data.profilePic);
         if (data.flashcards) setUserFlashcards(data.flashcards);
         if (data.activityHistory) setActivityHistory(data.activityHistory);
         
+        // 👉 NEW: STREAK DATA LOAD
+        setStreakCount(data.streak || 0);
+        setLastActiveDate(data.lastActiveDate || null);
+
         // Notifications
         const userNotifs = data.notifications || [];
         setNotifications(userNotifs);
@@ -317,29 +416,39 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     reader.readAsDataURL(file);
   };
 
-  const handleSaveProfile = async () => {
-    if (!user) return;
-    setIsSavingProfile(true);
+ const handleSaveProfile = async () => {
+    if (!user || !user.uid) { alert("You must be logged in to save."); return; }
+    if (!profileName.trim()) { alert("Username cannot be empty."); return; }
+
+    setIsSavingProfile(true); 
     try {
-      const userRef = doc(db, "users", user.uid);
-      await setDoc(userRef, {
-        displayName: profileName || user.email?.split('@')[0],
-        bio: profileBio,
-        accountTier: isPremium ? 'Premium' : 'Standard',
-        lastActive: new Date().toISOString(),
-        deviceOS: 'Android',
-        activityHistory: arrayUnion({
-          action: "Updated Identity Protocol",
-          date: new Date().toISOString()
-        })
-      }, { merge: true });
+      // 👉 NEW: Check the database for duplicate usernames
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("displayName", "==", profileName.trim()));
+      const querySnapshot = await getDocs(q);
       
-      alert("✅ Profile Identity Updated.");
-    } catch (error) { 
-      alert("❌ Failed to update profile."); 
-    } finally { 
-      setIsSavingProfile(false); 
-    }
+      let nameIsTaken = false;
+      querySnapshot.forEach((docSnap) => {
+        // If a document exists with this name, BUT it's not the current user's document
+        if (docSnap.id !== user.uid) {
+          nameIsTaken = true;
+        }
+      });
+
+      if (nameIsTaken) {
+        alert("❌ This username is already taken. Please choose another one.");
+        setIsSavingProfile(false);
+        return; // Stops the save process
+      }
+
+      // If the name is unique, proceed with saving
+      const userRef = doc(db, "users", user.uid);
+      await updateDoc(userRef, { displayName: profileName.trim(), bio: profileBio });
+      alert("✅ Profile successfully updated!");
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      alert("❌ Failed to save profile. Check your connection.");
+    } finally { setIsSavingProfile(false); }
   };
 
   const handleWipeData = async () => {
@@ -379,19 +488,13 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       });
       
       const shareUrl = `${window.location.origin}${window.location.pathname}?examCode=${docRef.id}`;
-      
       const shareText = `You've been invited to a private CBT session by ${profileName || 'a scholar'}. 📝\n\nPassword: ${docRef.id}\n\nTap the link below to start your exam instantly:`;
 
       if (navigator.share) {
         try { 
-          await navigator.share({ 
-            title: 'Private CBT Arena', 
-            text: shareText, 
-            url: shareUrl 
-          }); 
+          await navigator.share({ title: 'Private CBT Arena', text: shareText, url: shareUrl }); 
           return; 
-        } 
-        catch (shareErr) { console.log("User cancelled share or OS blocked it."); }
+        } catch (shareErr) { console.log("User cancelled share or OS blocked it."); }
       }
 
       const copyToClipboard = () => {
@@ -406,12 +509,8 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         catch (err) { textArea.remove(); return false; }
       };
 
-      if (copyToClipboard()) { 
-        alert(`✅ Exam Link Copied!\n\nPaste this into WhatsApp or any chat.\nPassword: ${docRef.id}`); 
-      } 
-      else { 
-        window.prompt("Your browser blocked the auto-copy. Manually copy this link:", shareUrl); 
-      }
+      if (copyToClipboard()) { alert(`✅ Exam Link Copied!\n\nPaste this into WhatsApp or any chat.\nPassword: ${docRef.id}`); } 
+      else { window.prompt("Your browser blocked the auto-copy. Manually copy this link:", shareUrl); }
     } catch (error) {
       if (error.code === 'permission-denied') { alert("❌ Permission Denied: Update your Firestore Rules for 'sharedExams'."); } 
       else { alert("❌ Failed to generate share link."); }
@@ -571,7 +670,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
 
   const toggleSubTopic = (sub) => { setSelectedSubTopics(prev => prev.includes(sub) ? prev.filter(s => s !== sub) : [...prev, sub]); };
   
-  // 👉 REWRITTEN: "Select All" folder logic matching your new UI
   const toggleEntireFolder = (folderName) => {
     const folderSubTopics = subjectHierarchy[folderName] || [];
     const allSelected = folderSubTopics.every(sub => selectedSubTopics.includes(sub));
@@ -725,20 +823,18 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     }
   };
 
- // 👉 NEW: The Report Function
   const handleReportQuestion = async (question, reason) => {
     try {
       await addDoc(collection(db, "reported_questions"), {
-        questionId: question.id || "unknown", // Now includes the exact DB ID
+        questionId: question.id || "unknown",
         questionText: question.q,
         subject: question.subject,
         subTopic: question.subTopic,
         reportedBy: user?.uid || "unknown",
         reason: reason,
         timestamp: new Date().toISOString(),
-        status: 'pending' // Admins can review this later
+        status: 'pending' 
       });
-    // 👉 THE UPDATED MESSAGE
       alert("✅ Thank you! This question has been flagged and will be reviewed by our team shortly.");
     } catch (e) {
       console.error("Report System Error:", e);
@@ -746,8 +842,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     }
   };
 
-  // 👉 UPDATED: 10x Faster Fetching Engine
-  const handleStartOfficialExam = async () => {
+const handleStartOfficialExam = async () => {
     if (selectedSubTopics.length === 0) { alert("⚠️ Please select at least one Official Subject Bank first!"); return; }
 
     const currentCount = dailyUsage?.count || 0;
@@ -771,7 +866,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     try {
       let allQuestions = [];
       
-      // 🚀 THE SPEED UPGRADE: Chunking queries into parallel batches of 10
       const chunks = [];
       for (let i = 0; i < selectedSubTopics.length; i += 10) {
           chunks.push(selectedSubTopics.slice(i, i + 10));
@@ -785,11 +879,9 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       const snapshots = await Promise.all(queryPromises);
       snapshots.forEach(snap => {
           snap.forEach(doc => {
-              allQuestions.push({ id: doc.id, ...doc.data() }); // Grabbing the document ID is crucial for reporting!
+              allQuestions.push({ id: doc.id, ...doc.data() }); 
           });
       });
-      
-     
 
       if (allQuestions.length === 0) { 
         alert(`No questions found for the selected subjects and data source!`); 
@@ -798,6 +890,17 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       }
       
       let processedQuestions = allQuestions;
+
+      // 👉 THE BUG FIX: Shuffle the internal options array HERE so the keyboard matches the screen!
+      if (shuffleOptions) {
+         processedQuestions = processedQuestions.map(q => {
+            // Create a copy of the options and shuffle them
+            const shuffledArray = [...q.options].sort(() => 0.5 - Math.random());
+            return { ...q, options: shuffledArray };
+         });
+      }
+      
+      // Shuffle the order of the questions themselves
       if (shuffleQuestions) {
          processedQuestions = processedQuestions.sort(() => 0.5 - Math.random());
       }
@@ -806,7 +909,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       
       setActiveExamQuestions(finalExamPayload);
       
-      // 👉 NEW: Support for 'untimed' exams
       setCbtTimeLeft(examDuration === 0 ? 'untimed' : examDuration); 
       setFlaggedQuestions(new Set());
       setCbtAnswers({});
@@ -828,14 +930,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     setActiveModule('examSetup');
   };
 
-  // --- CBT SIMULATOR ENGINE ---
-  const [cbtIndex, setCbtIndex] = useState(0);
-  const [cbtAnswers, setCbtAnswers] = useState({}); 
-  const [cbtTimeLeft, setCbtTimeLeft] = useState(600); 
-  const [cbtFinished, setCbtFinished] = useState(false);
-  const [cbtScore, setCbtScore] = useState(0);
-  const [isReviewing, setIsReviewing] = useState(false);
-
   useEffect(() => {
     let timer;
     if (activeModule === 'cbt' && !cbtFinished && cbtTimeLeft > 0) {
@@ -849,11 +943,13 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
 
   const handleSelectOption = (option) => {
     if (cbtFinished) return;
+    triggerHaptic(ImpactStyle.Light); // 👉 FEATURE 1: HAPTICS
     setCbtAnswers(prev => ({ ...prev, [cbtIndex]: option }));
   };
 
   const handleSubmitCBT = () => {
     if (!cbtFinished) {
+      triggerHaptic(ImpactStyle.Heavy); // 👉 FEATURE 1: HAPTICS
       let correct = 0;
       const newlyFailedCards = [];
       activeExamQuestions.forEach((q, idx) => { 
@@ -899,10 +995,23 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       const userRef = doc(db, "users", user.uid);
       const todayStr = new Date().toISOString().split('T')[0];
       
+      // 👉 FEATURE 2: STREAK CALCULATION ENGINE
+      let newStreak = streakCount;
+      if (lastActiveDate) {
+        const lastDate = new Date(lastActiveDate);
+        const today = new Date(todayStr);
+        const diffDays = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
+        if (diffDays === 1) newStreak += 1; // Examined yesterday! Keep it burning.
+        else if (diffDays > 1) newStreak = 1; // Missed a day. Reset.
+      } else {
+        newStreak = 1; // First exam ever!
+      }
+
       const updates = {
         totalExamsTaken: increment(1),
         totalQuestionsAnswered: increment(activeExamQuestions.length),
         lastActiveDate: todayStr,
+        streak: newStreak, // Save the new streak
         dailyQuestionsAnswered: dailyUsage.date === todayStr ? increment(activeExamQuestions.length) : activeExamQuestions.length
       };
       
@@ -915,6 +1024,34 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       
       await updateDoc(userRef, updates);
     } catch (error) { console.error("🚨 Failed to save exam:", error); }
+  };
+
+  // 👉 FEATURE 3: SMART ONBOARDING
+  const completeOnboarding = async () => {
+    setShowOnboarding(false);
+    if (user) {
+      await updateDoc(doc(db, "users", user.uid), { hasSeenOnboarding: true });
+    }
+  };
+
+  // 👉 FEATURE 4: DIRECT FEEDBACK LOOP
+ const submitFeedback = async () => {
+    if (!feedbackText.trim() || !user) return;
+    try {
+      await addDoc(collection(db, "user_feedback"), {
+        userId: user.uid,
+        userName: profileName || 'Anonymous Scholar',
+        userEmail: user?.email || 'No email provided', // 👉 NEW: Grabs their actual email
+        message: feedbackText,
+        timestamp: new Date().toISOString(),
+        status: 'unread'
+      });
+      setFeedbackText("");
+      setShowFeedbackModal(false);
+      alert("✅ Feedback sent directly to the developers. Thank you!");
+    } catch (e) {
+      alert("❌ Failed to send feedback.");
+    }
   };
 
   const formatTime = (seconds) => {
@@ -989,6 +1126,12 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           <Image src="/Drill (1).png" alt="Logo" width={32} height={32} style={{ borderRadius: '8px' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             
+            {/* 👉 THE NEW STREAK ICON */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(239, 68, 68, 0.1)', padding: '5px 10px', borderRadius: '20px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+               <Flame size={18} color={streakCount > 0 ? "#ef4444" : "#64748b"} />
+               <span style={{ color: streakCount > 0 ? "#ef4444" : "#64748b", fontWeight: 'bold', fontSize: '0.9rem' }}>{streakCount}</span>
+            </div>
+
             <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => setActiveModule('notifications')}>
               {(() => {
                 const totalUnread = unreadCount + (isAdmin && ghostNotification ? 1 : 0);
@@ -1018,11 +1161,12 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
             )}
 
             {activeModule !== 'hub' && (
-              <button onClick={() => setActiveModule('hub')} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', padding: '8px 15px', borderRadius: '8px' }}>
+              <button onClick={() => handleProtectedNavigation(() => setActiveModule('hub'))} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', padding: '8px 15px', borderRadius: '8px' }}>
                 <ArrowLeft size={18} /> HUB
               </button>
             )}
-            <button onClick={closeExamMode} style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', padding: '8px 15px', borderRadius: '8px' }}>
+            
+            <button onClick={() => handleProtectedNavigation(closeExamMode)} style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', padding: '8px 15px', borderRadius: '8px' }}>
               <X size={18} /> EXIT
             </button>
         </div>
@@ -1099,6 +1243,12 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
               <Zap size={18} /> ADMIN DASHBOARD
             </button>
           )}
+
+          {/* 👉 THE FEEDBACK PORTAL */}
+          <div onClick={() => setShowFeedbackModal(true)} style={{ width: '100%', padding: '20px', background: 'rgba(56, 189, 248, 0.05)', border: '1px dashed rgba(56, 189, 248, 0.4)', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: '#38bdf8', transition: 'all 0.2s', marginTop: '10px' }}>
+            <MessageSquarePlus size={20} />
+            <span style={{ fontWeight: 'bold' }}>Have an idea or found a bug? Tell the Developer!</span>
+          </div>
         </div>
       )}
 
@@ -1160,7 +1310,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         />
       )}
 
-     {activeModule === 'profile' && (
+   {activeModule === 'profile' && (
         <UserProfile 
           fileInputRef={fileInputRef}
           handleImageUpload={handleImageUpload}
@@ -1172,6 +1322,8 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           handleSaveProfile={handleSaveProfile}
           isSavingProfile={isSavingProfile}
           handleWipeData={handleWipeData}
+          totalExamsTaken={liveStats?.totalExamsTaken || 0} 
+          isPremium={false} 
         />
       )}
 
@@ -1243,7 +1395,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           setQuestionCount={setQuestionCount}
           handleStartOfficialExam={handleStartOfficialExam}
           isFetchingExam={isFetchingExam}
-          // 👉 NEW PROPS PASSED TO EXAM SETUP
           shuffleQuestions={shuffleQuestions}
           setShuffleQuestions={setShuffleQuestions}
           shuffleOptions={shuffleOptions}
@@ -1287,9 +1438,56 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           strictMode={strictMode}
           instantFeedback={instantFeedback}
           shuffleOptions={shuffleOptions}
-          isAdmin={isAdmin} // 👈 ADD THIS SO YOU CAN SEE THE BADGES
-          handleReportQuestion={handleReportQuestion} // 👈 ADD THIS SO THE BUTTON WORKS
+          isAdmin={isAdmin} 
+          handleReportQuestion={handleReportQuestion} 
         />
+      )}
+
+      {/* 👉 SMART ONBOARDING MODAL */}
+      {showOnboarding && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(2, 6, 23, 0.95)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: '#0f172a', border: '1px solid #38bdf8', borderRadius: '20px', padding: '40px', maxWidth: '500px', width: '100%', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
+             {onboardingStep === 1 && (
+               <>
+                 <div style={{ background: 'rgba(245, 158, 11, 0.1)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}><Timer size={40} color="#f59e0b" /></div>
+                 <h2 style={{ color: '#fff', fontSize: '1.8rem', margin: '0 0 15px 0' }}>Welcome to Drill Pro</h2>
+                 <p style={{ color: '#94a3b8', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '30px' }}>Your ultimate CBT preparation engine. Practice past questions, track your analytics, and never walk into an exam unprepared again.</p>
+                 <button onClick={() => setOnboardingStep(2)} style={{ width: '100%', padding: '15px', background: '#38bdf8', color: '#000', border: 'none', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>Next</button>
+               </>
+             )}
+             {onboardingStep === 2 && (
+               <>
+                 <div style={{ background: 'rgba(236, 72, 153, 0.1)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}><Users size={40} color="#ec4899" /></div>
+                 <h2 style={{ color: '#fff', fontSize: '1.8rem', margin: '0 0 15px 0' }}>Challenge Your Friends</h2>
+                 <p style={{ color: '#94a3b8', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '30px' }}>Use the <strong>Shared Arena</strong> to generate custom exams and send private passcodes to your study group to compete in real-time.</p>
+                 <button onClick={() => setOnboardingStep(3)} style={{ width: '100%', padding: '15px', background: '#38bdf8', color: '#000', border: 'none', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>Next</button>
+               </>
+             )}
+             {onboardingStep === 3 && (
+               <>
+                 <div style={{ background: 'rgba(16, 185, 129, 0.1)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}><CheckCircle2 size={40} color="#10b981" /></div>
+                 <h2 style={{ color: '#fff', fontSize: '1.8rem', margin: '0 0 15px 0' }}>Keep the Fire Burning</h2>
+                 <p style={{ color: '#94a3b8', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '30px' }}>Watch your 🔥 streak grow at the top of the screen by taking at least one exam every single day. Let's get to work.</p>
+                 <button onClick={completeOnboarding} style={{ width: '100%', padding: '15px', background: '#10b981', color: '#000', border: 'none', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>INITIATE SYSTEM</button>
+               </>
+             )}
+          </div>
+        </div>
+      )}
+
+      {/* 👉 DIRECT FEEDBACK MODAL */}
+      {showFeedbackModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(2, 6, 23, 0.8)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '16px', padding: '30px', maxWidth: '500px', width: '100%' }}>
+            <h3 style={{ color: '#fff', marginTop: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><MessageSquarePlus color="#38bdf8" /> Send Feedback</h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Missing a subject? Found a glitch? Want a new feature? Tell me directly below:</p>
+            <textarea value={feedbackText} onChange={e => setFeedbackText(e.target.value)} rows="5" placeholder="Type your idea here..." style={{ width: '100%', padding: '15px', background: '#020617', border: '1px solid #1e293b', color: '#fff', borderRadius: '8px', outline: 'none', resize: 'none', marginBottom: '20px' }} />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setShowFeedbackModal(false)} style={{ flex: 1, padding: '12px', background: 'transparent', border: '1px solid #334155', color: '#94a3b8', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>CANCEL</button>
+              <button onClick={submitFeedback} style={{ flex: 1, padding: '12px', background: '#38bdf8', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>SEND SECURELY</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showPremiumModal && <PremiumModal user={user} onClose={() => setShowPremiumModal(false)} />}
