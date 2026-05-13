@@ -10,11 +10,11 @@ import CbtSimulator from './CbtSimulator';
 import ExamSetup from './ExamSetup';
 import CommandCenter from './CommandCenter';
 import AdminDashboard from './AdminDashboard';
-import SharedArena from './SharedArena';
 import RapidFire from './RapidFire';
 import UserProfile from './UserProfile';
 import Leaderboard from './Leaderboard';
 import NotificationCenter from './NotificationCenter';
+import LiveClassroom from './LiveClassroom';
 
 const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, user }) => {
   const [activeModule, setActiveModule] = useState('hub'); 
@@ -35,9 +35,10 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [isDeleting, setIsDeleting] = useState(false);
   const [showPremiumModal, setShowPremiumModal] = useState(false); 
 
-  // 👉 NEW: SUBJECT COMBO STATES
   const [coreSubjects, setCoreSubjects] = useState([]); 
   const [showAllSubjects, setShowAllSubjects] = useState(false);
+
+  const [recallVault, setRecallVault] = useState([]); 
 
   const [shuffleQuestions, setShuffleQuestions] = useState(true);
   const [shuffleOptions, setShuffleOptions] = useState(true);
@@ -53,14 +54,9 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [feedbackText, setFeedbackText] = useState("");
 
   const [liveStats, setLiveStats] = useState({
-    totalExams: 0,
-    totalQuestions: 0,
-    totalPassed: 0,
-    totalFailed: 0,
-    averageScore: 0,
-    bestSubject: { name: 'N/A', accuracy: 0 },
-    worstSubject: { name: 'N/A', accuracy: 0 },
-    weakestTopics: []
+    totalExams: 0, totalQuestions: 0, totalPassed: 0, totalFailed: 0,
+    averageScore: 0, bestSubject: { name: 'N/A', accuracy: 0 },
+    worstSubject: { name: 'N/A', accuracy: 0 }, weakestTopics: []
   });
   
   const [examSchedule, setExamSchedule] = useState([]);
@@ -68,6 +64,10 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [newExamName, setNewExamName] = useState('');
   const [newExamDate, setNewExamDate] = useState('');
   const [newExamSubject, setNewExamSubject] = useState('GENERAL');
+
+  const [activeSharedRoom, setActiveSharedRoom] = useState(null);
+  // 👉 ADDED: State to track if we are routing to a Lobby or Solo CBT
+  const [isCreatingClassroom, setIsCreatingClassroom] = useState(false); 
 
   const [profileName, setProfileName] = useState('');
   const [profileBio, setProfileBio] = useState('');
@@ -178,6 +178,32 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [activeModule, cbtFinished]);
 
+  // 👉 UPDATED: Synchronized Start & Live Name Sync
+  useEffect(() => {
+    if (!activeSharedRoom || !activeSharedRoom.id || activeModule !== 'arena') return;
+
+    const roomRef = doc(db, "sharedExams", activeSharedRoom.id);
+    const unsubscribe = onSnapshot(roomRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const roomData = docSnap.data();
+        
+        // Continually push fresh data to state so names appear live
+        setActiveSharedRoom({ id: docSnap.id, ...roomData });
+
+        if (roomData.status === 'active') {
+          setFlaggedQuestions(new Set());
+          setCbtAnswers({});
+          setCbtIndex(0);
+          setCbtFinished(false);
+          setIsReviewing(false);
+          setActiveModule('cbt');
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [activeSharedRoom?.id, activeModule]); // Strict dependency to prevent infinite loops
+
   const generateAiQuestion = async () => {
     setIsAiGenerating(true);
     try {
@@ -261,8 +287,8 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           setShowOnboarding(true);
         }
 
-        // 👉 NEW: Pulls their saved subject combo
         if (data.coreSubjects) setCoreSubjects(data.coreSubjects);
+        if (data.recallVault) setRecallVault(data.recallVault);
 
         if (data.displayName) setProfileName(data.displayName);
         if (data.bio) setProfileBio(data.bio);
@@ -390,7 +416,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     reader.readAsDataURL(file);
   };
 
-  // 👉 NEW: Saving the Subject Combo to Firebase
   const handleSaveProfile = async () => {
     if (!user || !user.uid) { alert("You must be logged in to save."); return; }
     if (!profileName.trim()) { alert("Username cannot be empty."); return; }
@@ -418,7 +443,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       await updateDoc(userRef, { 
         displayName: profileName.trim(), 
         bio: profileBio,
-        coreSubjects: coreSubjects // 👉 Saves the selections
+        coreSubjects: coreSubjects 
       });
       alert("✅ Profile successfully updated!");
     } catch (error) {
@@ -438,6 +463,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         totalQuestionsAnswered: 0,
         topicStats: {},
         flashcards: [],
+        recallVault: [], 
         examSchedule: []
       }, { merge: true });
       const q = query(collection(db, "examResults"), where("userId", "==", user.uid));
@@ -459,7 +485,10 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         duration: examDuration,
         createdAt: new Date().toISOString(),
         creatorId: user?.uid || 'Anonymous',
-        creatorName: profileName || 'A Scholar'
+        creatorName: profileName || 'A Scholar',
+        status: 'waiting', 
+        participants: [], // 👉 Added for name tracking
+        mode: 'collaborate'
       });
       
       const shareUrl = `${window.location.origin}${window.location.pathname}?examCode=${docRef.id}`;
@@ -492,7 +521,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     }
   };
 
-  const handleJoinSharedExam = async () => {
+ const handleJoinSharedExam = async () => {
     if (!joinCode.trim()) { alert("Please enter a valid exam code."); return; }
     setIsJoining(true);
     try {
@@ -500,18 +529,14 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data();
+        
         setActiveExamQuestions(data.questions);
         setExamDuration(data.duration || 600);
         setCbtTimeLeft(data.duration || 600);
-        setFlaggedQuestions(new Set());
-        setCbtAnswers({});
-        setCbtIndex(0);
-        setCbtFinished(false);
-        setIsReviewing(false);
-        setActiveModule('cbt');
-        alert(`Joined exam created by ${data.creatorName || 'a friend'}!`);
+        setActiveSharedRoom({ id: docSnap.id, ...data });
+        
       } else { alert("❌ Invalid or expired Exam Code."); }
-    } catch (error) { alert("❌ Failed to join exam."); } 
+    } catch (error) { alert("❌ Failed to join classroom."); } 
     finally { setIsJoining(false); }
   };
 
@@ -614,8 +639,8 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     if (!inputSubject) return "GENERAL";
     let upperInput = inputSubject.toUpperCase();
     if (upperInput.includes('-')) upperInput = upperInput.split('-')[0].trim();
-    const coreSubjects = ["CHEMISTRY", "PHYSICS", "BIOLOGY", "MATHEMATICS", "ENGLISH", "ECONOMICS", "GOVERNMENT", "GEOGRAPHY", "COMPUTER SCIENCE", "COMPUTING"];
-    for (let core of coreSubjects) { if (upperInput.includes(core)) return core; }
+    const coreSubjectsList = ["CHEMISTRY", "PHYSICS", "BIOLOGY", "MATHEMATICS", "ENGLISH", "ECONOMICS", "GOVERNMENT", "GEOGRAPHY", "COMPUTER SCIENCE", "COMPUTING"];
+    for (let core of coreSubjectsList) { if (upperInput.includes(core)) return core; }
     if (upperInput.includes("GENETICS") || upperInput.includes("ENDOCRINOLOGY") || upperInput.includes("IMMUNOLOGY") || upperInput.includes("PHYSIOLOGY") || upperInput.includes("MICROBIOLOGY")) return "BIOLOGY";
     if (upperInput.includes("THERMODYNAMICS") || upperInput.includes("KINEMATICS") || upperInput.includes("MECHANICS")) return "PHYSICS";
     if (upperInput.includes("CALCULUS") || upperInput.includes("ALGEBRA") || upperInput.includes("GEOMETRY")) return "MATHEMATICS";
@@ -740,7 +765,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         status: 'pending',
         createdAt: new Date().toISOString()
       });
-      alert("🚀 Question sent to the Forge! If approved by admins, you'll receive 1 hour of Premium.");
+      alert("🚀 Question sent to the Forge!");
       setForgeData({ q: '', optA: '', optB: '', optC: '', optD: '', answer: '', subject: 'GENERAL' });
       setActiveModule('hub');
     } catch (e) { alert("❌ Submission failed."); }
@@ -877,16 +902,42 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       }
       
       const finalExamPayload = processedQuestions.slice(0, finalQuestionCount);
+
+      if (recallVault.length > 0 && finalExamPayload.length >= 5) {
+         const validFragile = recallVault.filter(rq => selectedSubTopics.includes(rq.subTopic) || selectedSubTopics.includes(rq.subject));
+         if (validFragile.length > 0) {
+             const injectionCard = validFragile[Math.floor(Math.random() * validFragile.length)];
+             finalExamPayload[2] = { ...injectionCard, id: `recall_injected_${Date.now()}` };
+         }
+      }
       
       setActiveExamQuestions(finalExamPayload);
       
-      setCbtTimeLeft(examDuration === 0 ? 'untimed' : examDuration); 
-      setFlaggedQuestions(new Set());
-      setCbtAnswers({});
-      setCbtIndex(0);
-      setActiveModule('cbt');
-      setCbtFinished(false);
-      setIsReviewing(false); 
+      // 👉 UPDATED: The Routing Engine - Check if we are creating a lobby or taking a solo CBT
+      if (isCreatingClassroom) {
+        const docRef = await addDoc(collection(db, "sharedExams"), {
+          questions: finalExamPayload,
+          duration: examDuration,
+          createdAt: new Date().toISOString(),
+          creatorId: user?.uid || 'Anonymous',
+          creatorName: profileName || 'A Scholar',
+          status: 'waiting',
+          participants: [],
+          mode: 'collaborate'
+        });
+
+        setActiveSharedRoom({ id: docRef.id, questions: finalExamPayload, creatorName: profileName, creatorId: user?.uid, status: 'waiting', participants: [] });
+        setIsCreatingClassroom(false);
+        setActiveModule('arena');
+      } else {
+        setCbtTimeLeft(examDuration === 0 ? 'untimed' : examDuration); 
+        setFlaggedQuestions(new Set());
+        setCbtAnswers({});
+        setCbtIndex(0);
+        setActiveModule('cbt');
+        setCbtFinished(false);
+        setIsReviewing(false); 
+      }
     } catch (error) { 
       console.error(error);
       alert("❌ Failed to fetch the Question Bank. Check your internet connection."); 
@@ -922,14 +973,20 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       triggerHaptic(ImpactStyle.Heavy); 
       let correct = 0;
       const newlyFailedCards = [];
+      const fragileQuestions = []; 
+
       activeExamQuestions.forEach((q, idx) => { 
         if (cbtAnswers[idx] === q.answer) { correct++; } 
-        else { newlyFailedCards.push({ front: q.q, back: q.answer, subject: q.subTopic || q.subject || "General" }); }
+        else { 
+          newlyFailedCards.push({ front: q.q, back: q.answer, subject: q.subTopic || q.subject || "General" }); 
+          fragileQuestions.push(q);
+        }
       });
+
       setCbtScore(correct);
       setCbtFinished(true);
       setIsCalculatorOpen(false); 
-      saveExamResultsToCloud(correct, newlyFailedCards);
+      saveExamResultsToCloud(correct, newlyFailedCards, fragileQuestions);
     }
   };
 
@@ -948,7 +1005,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     await updateDoc(doc(db, "users", user.uid), { notifications: updatedNotifs });
   };
 
-  const saveExamResultsToCloud = async (finalScore, newlyFailedCards) => {
+  const saveExamResultsToCloud = async (finalScore, newlyFailedCards, fragileQuestions) => {
     if (!user) return; 
     try {
       const topicStats = {};
@@ -985,6 +1042,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       };
       
       if (newlyFailedCards.length > 0) { updates.flashcards = arrayUnion(...newlyFailedCards); }
+      if (fragileQuestions.length > 0) { updates.recallVault = arrayUnion(...fragileQuestions); }
       
       Object.entries(topicStats).forEach(([topic, stats]) => {
         updates[`topicStats.${topic}.correct`] = increment(stats.correct);
@@ -1080,7 +1138,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       className="ai-overlay" 
       style={{ 
         zIndex: 2147483647, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
-        backgroundColor: '#020617', display: 'block', overflowY: 'auto',
+        backgroundColor: '#020617', display: 'block', overflowY: 'auto', overflowX: 'hidden', width: '100vw', maxWidth: '100%',
         WebkitTapHighlightColor: 'transparent', WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'manipulation' 
       }}
     >
@@ -1137,9 +1195,9 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         </div>
       </div>
 
-      {/* THE MAIN HUB */}
+      {/* THE MAIN HUB (MOBILE OPTIMIZED GRID) */}
       {activeModule === 'hub' && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '1000px', margin: '40px auto 100px auto', width: '100%', padding: '0 20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '1000px', margin: '40px auto 100px auto', width: '100%', padding: '0 20px', boxSizing: 'border-box' }}>
           
           {closestExam && daysToClosest <= 7 && (
             <div style={{ width: '100%', maxWidth: '1000px', background: daysToClosest <= 3 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)', border: `1px solid ${daysToClosest <= 3 ? '#ef4444' : '#f59e0b'}`, padding: '20px', borderRadius: '12px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
@@ -1164,42 +1222,44 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           <h1 style={{ color: '#fff', fontSize: '2rem', marginBottom: '10px', textAlign: 'center' }}>Select Training Module</h1>
           <p style={{ color: '#94a3b8', fontSize: '1rem', marginBottom: '40px', textAlign: 'center' }}>Choose your preparation protocol.</p>
           
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', width: '100%', marginBottom: '40px', justifyContent: 'center' }}>
-            <div onClick={() => setActiveModule('examSetup')} style={{ minWidth: '250px', flex: '1', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '16px', padding: '30px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '15px', boxShadow: '0 10px 30px rgba(245, 158, 11, 0.1)' }}>
-              <div style={{ background: 'rgba(245, 158, 11, 0.1)', padding: '20px', borderRadius: '50%' }}><Timer size={30} color="#f59e0b" /></div>
-              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.3rem' }}>CBT Simulator</h3>
+          {/* 👉 NEW CSS GRID LAYOUT */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', width: '100%', marginBottom: '40px' }}>
+            
+            <div onClick={() => setActiveModule('examSetup')} style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', boxShadow: '0 10px 30px rgba(245, 158, 11, 0.1)' }}>
+              <div style={{ background: 'rgba(245, 158, 11, 0.1)', padding: '15px', borderRadius: '50%' }}><Timer size={26} color="#f59e0b" /></div>
+              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>CBT Simulator</h3>
             </div>
             
-            <div onClick={() => setActiveModule('analytics')} style={{ minWidth: '250px', flex: '1', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid #8b5cf6', borderRadius: '16px', padding: '30px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '15px' }}>
-              <div style={{ background: 'rgba(139, 92, 246, 0.1)', padding: '20px', borderRadius: '50%' }}><Zap size={30} color="#8b5cf6" /></div>
-              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.3rem' }}>Command Center</h3>
+            <div onClick={() => setActiveModule('analytics')} style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid #8b5cf6', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px' }}>
+              <div style={{ background: 'rgba(139, 92, 246, 0.1)', padding: '15px', borderRadius: '50%' }}><Zap size={26} color="#8b5cf6" /></div>
+              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>Command Center</h3>
             </div>
             
-            <div onClick={() => setActiveModule('arena')} style={{ minWidth: '250px', flex: '1', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(236, 72, 153, 0.5)', borderRadius: '16px', padding: '30px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '15px' }}>
-              <div style={{ background: 'rgba(236, 72, 153, 0.1)', padding: '20px', borderRadius: '50%' }}><Users size={30} color="#ec4899" /></div>
-              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.3rem' }}>Shared Arena</h3>
+            <div onClick={() => setActiveModule('arena')} style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(59, 130, 246, 0.5)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px' }}>
+              <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '15px', borderRadius: '50%' }}><Users size={26} color="#3b82f6" /></div>
+              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>Live Classroom</h3>
             </div>
 
-            <div onClick={() => setActiveModule('rapid')} style={{ minWidth: '250px', flex: '1', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid #3b82f6', borderRadius: '16px', padding: '30px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '15px', position: 'relative', overflow: 'hidden' }}>
+            <div onClick={() => setActiveModule('rapid')} style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid #3b82f6', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', position: 'relative', overflow: 'hidden' }}>
               {userFlashcards.length > 0 && (
-                <div style={{ position: 'absolute', top: '15px', right: '15px', background: '#ef4444', color: '#fff', padding: '4px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                <div style={{ position: 'absolute', top: '10px', right: '10px', background: '#ef4444', color: '#fff', padding: '4px 8px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 'bold' }}>
                   {userFlashcards.length} Vaulted
                 </div>
               )}
-              <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '20px', borderRadius: '50%' }}><Zap size={30} color="#3b82f6" /></div>
-              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.3rem' }}>Rapid Fire</h3>
+              <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '15px', borderRadius: '50%' }}><Zap size={26} color="#3b82f6" /></div>
+              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>Rapid Fire</h3>
             </div>
             
-            <div onClick={() => setActiveModule('leaderboard')} style={{ minWidth: '250px', flex: '1', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', padding: '30px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '15px' }}>
-              <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '20px', borderRadius: '50%' }}><Trophy size={30} color="#10b981" /></div>
-              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.3rem' }}>Leaderboard</h3>
+            <div onClick={() => setActiveModule('leaderboard')} style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px' }}>
+              <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '15px', borderRadius: '50%' }}><Trophy size={26} color="#10b981" /></div>
+              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>Leaderboard</h3>
             </div>
 
-            <div onClick={() => setActiveModule('forge')} style={{ minWidth: '250px', flex: '1', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(234, 88, 12, 0.1))', border: '1px solid #f59e0b', borderRadius: '16px', padding: '30px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '15px' }}>
-              <div style={{ background: 'rgba(245, 158, 11, 0.2)', padding: '20px', borderRadius: '50%' }}><PenTool size={30} color="#f59e0b" /></div>
-              <h3 style={{ color: '#f59e0b', margin: 0, fontSize: '1.3rem' }}>Community Forge</h3>
-              <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: 0 }}>Submit questions for Premium.</p>
+            <div onClick={() => setActiveModule('forge')} style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(234, 88, 12, 0.1))', border: '1px solid #f59e0b', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px' }}>
+              <div style={{ background: 'rgba(245, 158, 11, 0.2)', padding: '15px', borderRadius: '50%' }}><PenTool size={26} color="#f59e0b" /></div>
+              <h3 style={{ color: '#f59e0b', margin: 0, fontSize: '1.1rem' }}>Community Forge</h3>
             </div>
+            
           </div>
 
           {isAdmin && (
@@ -1210,7 +1270,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
 
           <div onClick={() => setShowFeedbackModal(true)} style={{ width: '100%', padding: '20px', background: 'rgba(56, 189, 248, 0.05)', border: '1px dashed rgba(56, 189, 248, 0.4)', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: '#38bdf8', transition: 'all 0.2s', marginTop: '10px' }}>
             <MessageSquarePlus size={20} />
-            <span style={{ fontWeight: 'bold' }}>Have an idea or found a bug? Tell the Developer!</span>
+            <span style={{ fontWeight: 'bold' }}>Found a bug? Tell the Developer!</span>
           </div>
         </div>
       )}
@@ -1248,14 +1308,35 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         />
       )}
 
-      {activeModule === 'arena' && (
-        <SharedArena 
-          joinCode={joinCode}
-          setJoinCode={setJoinCode}
-          handleJoinSharedExam={handleJoinSharedExam}
-          isJoining={isJoining}
-        />
-      )}
+    {/* 👉 UPDATED: Handling the creation state block */}
+    {activeModule === 'arena' && (
+      <LiveClassroom 
+        joinCode={joinCode}
+        setJoinCode={setJoinCode}
+        handleLocateClassroom={handleJoinSharedExam}
+        isJoining={isJoining}
+        roomDetails={activeSharedRoom}
+        currentUser={user}
+        
+        handleCommenceExam={async (action) => {
+          if (action === 'create') {
+            setIsCreatingClassroom(true); // Flag to intercept start button
+            setActiveModule('examSetup');
+            return;
+          }
+          
+          if (activeSharedRoom && activeSharedRoom.id) {
+            try {
+              await updateDoc(doc(db, "sharedExams", activeSharedRoom.id), {
+                status: 'active'
+              });
+            } catch (error) {
+              alert("Failed to sync start. Check connection.");
+            }
+          }
+        }}
+      />
+    )}
 
       {activeModule === 'rapid' && (
         <RapidFire 
@@ -1271,7 +1352,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         />
       )}
 
-      {/* 👉 NEW: Passed coreSubjects props down to UserProfile */}
       {activeModule === 'profile' && (
         <UserProfile 
           fileInputRef={fileInputRef}
@@ -1342,7 +1422,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         />
       )}
 
-      {/* 👉 NEW: Passed coreSubjects props down to ExamSetup */}
       {activeModule === 'examSetup' && (
         <ExamSetup 
           handleGlobalRefresh={handleGlobalRefresh}
@@ -1422,17 +1501,17 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
              )}
              {onboardingStep === 2 && (
                <>
-                 <div style={{ background: 'rgba(236, 72, 153, 0.1)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}><Users size={40} color="#ec4899" /></div>
-                 <h2 style={{ color: '#fff', fontSize: '1.8rem', margin: '0 0 15px 0' }}>Challenge Your Friends</h2>
-                 <p style={{ color: '#94a3b8', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '30px' }}>Use the <strong>Shared Arena</strong> to generate custom exams and send private passcodes to your study group to compete in real-time.</p>
+                 <div style={{ background: 'rgba(59, 130, 246, 0.1)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}><Users size={40} color="#3b82f6" /></div>
+                 <h2 style={{ color: '#fff', fontSize: '1.8rem', margin: '0 0 15px 0' }}>Collaborative Study</h2>
+                 <p style={{ color: '#94a3b8', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '30px' }}>Use the <strong>Live Classroom</strong> to generate custom exams and send private passcodes to your study group to review in real-time.</p>
                  <button onClick={() => setOnboardingStep(3)} style={{ width: '100%', padding: '15px', background: '#38bdf8', color: '#000', border: 'none', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>Next</button>
                </>
              )}
              {onboardingStep === 3 && (
                <>
                  <div style={{ background: 'rgba(16, 185, 129, 0.1)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}><CheckCircle2 size={40} color="#10b981" /></div>
-                 <h2 style={{ color: '#fff', fontSize: '1.8rem', margin: '0 0 15px 0' }}>Keep the Fire Burning</h2>
-                 <p style={{ color: '#94a3b8', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '30px' }}>Watch your 🔥 streak grow at the top of the screen by taking at least one exam every single day. Let's get to work.</p>
+                 <h2 style={{ color: '#fff', fontSize: '1.8rem', margin: '0 0 15px 0' }}>Consistency Protocol</h2>
+                 <p style={{ color: '#94a3b8', fontSize: '1.1rem', lineHeight: '1.6', marginBottom: '30px' }}>Watch your 🔥 streak grow at the top of the screen by completing at least one session every single day. Consistency builds mastery.</p>
                  <button onClick={completeOnboarding} style={{ width: '100%', padding: '15px', background: '#10b981', color: '#000', border: 'none', borderRadius: '10px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>INITIATE SYSTEM</button>
                </>
              )}
