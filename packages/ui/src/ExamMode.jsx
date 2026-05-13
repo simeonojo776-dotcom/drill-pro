@@ -66,7 +66,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [newExamSubject, setNewExamSubject] = useState('GENERAL');
 
   const [activeSharedRoom, setActiveSharedRoom] = useState(null);
-  // 👉 ADDED: State to track if we are routing to a Lobby or Solo CBT
   const [isCreatingClassroom, setIsCreatingClassroom] = useState(false); 
 
   const [profileName, setProfileName] = useState('');
@@ -75,7 +74,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [activityHistory, setActivityHistory] = useState([]);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const fileInputRef = useRef(null);
-  const [examDifficulty, setExamDifficulty] = useState('all'); // 👉 NEW
+  const [examDifficulty, setExamDifficulty] = useState('all');
 
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -112,6 +111,9 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [cbtFinished, setCbtFinished] = useState(false);
   const [cbtScore, setCbtScore] = useState(0);
   const [isReviewing, setIsReviewing] = useState(false);
+  
+  // 👉 ADDED: Pacing Engine State
+  const [questionTimes, setQuestionTimes] = useState({});
 
   const [isSubmittingForge, setIsSubmittingForge] = useState(false);
   const [forgeData, setForgeData] = useState({
@@ -179,7 +181,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [activeModule, cbtFinished]);
 
-  // 👉 UPDATED: Synchronized Start & Live Name Sync
   useEffect(() => {
     if (!activeSharedRoom || !activeSharedRoom.id || activeModule !== 'arena') return;
 
@@ -188,13 +189,13 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       if (docSnap.exists()) {
         const roomData = docSnap.data();
         
-        // Continually push fresh data to state so names appear live
         setActiveSharedRoom({ id: docSnap.id, ...roomData });
 
         if (roomData.status === 'active') {
           setFlaggedQuestions(new Set());
           setCbtAnswers({});
           setCbtIndex(0);
+          setQuestionTimes({}); // 👉 RESET PACING LOG
           setCbtFinished(false);
           setIsReviewing(false);
           setActiveModule('cbt');
@@ -203,7 +204,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     });
 
     return () => unsubscribe();
-  }, [activeSharedRoom?.id, activeModule]); // Strict dependency to prevent infinite loops
+  }, [activeSharedRoom?.id, activeModule]);
 
   const generateAiQuestion = async () => {
     setIsAiGenerating(true);
@@ -488,7 +489,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         creatorId: user?.uid || 'Anonymous',
         creatorName: profileName || 'A Scholar',
         status: 'waiting', 
-        participants: [], // 👉 Added for name tracking
+        participants: [], 
         mode: 'collaborate'
       });
       
@@ -883,10 +884,8 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           });
       });
 
-      // 👉 THE NEW DIFFICULTY FILTER ENGINE
       let processedQuestions = allQuestions;
       if (examDifficulty !== 'all') {
-        // Includes questions matching the tag, AND legacy questions without a tag so the app doesn't crash on old data
         processedQuestions = allQuestions.filter(q => !q.difficulty || q.difficulty === examDifficulty);
       }
 
@@ -919,7 +918,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       
       setActiveExamQuestions(finalExamPayload);
       
-      // 👉 UPDATED: The Routing Engine
       if (isCreatingClassroom) {
         const docRef = await addDoc(collection(db, "sharedExams"), {
           questions: finalExamPayload,
@@ -940,6 +938,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         setFlaggedQuestions(new Set());
         setCbtAnswers({});
         setCbtIndex(0);
+        setQuestionTimes({}); // 👉 RESET PACING LOG
         setActiveModule('cbt');
         setCbtFinished(false);
         setIsReviewing(false); 
@@ -958,15 +957,25 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     setActiveModule('examSetup');
   };
 
+  // 👉 UPDATED: Shadow Timer for Pacing Analytics
   useEffect(() => {
     let timer;
     if (activeModule === 'cbt' && !cbtFinished && cbtTimeLeft > 0) {
-      timer = setInterval(() => { setCbtTimeLeft((prev) => prev - 1); }, 1000);
+      timer = setInterval(() => { 
+        setCbtTimeLeft((prev) => prev - 1); 
+        
+        // Add 1 second to the specific question currently on screen
+        setQuestionTimes((prev) => ({
+          ...prev,
+          [cbtIndex]: (prev[cbtIndex] || 0) + 1
+        }));
+        
+      }, 1000);
     } else if (cbtTimeLeft === 0 && !cbtFinished && activeExamQuestions.length > 0) {
       handleSubmitCBT(); 
     }
     return () => clearInterval(timer);
-  }, [activeModule, cbtTimeLeft, cbtFinished, activeExamQuestions]);
+  }, [activeModule, cbtTimeLeft, cbtFinished, activeExamQuestions, cbtIndex]);
 
   const handleSelectOption = (option) => {
     if (cbtFinished) return;
@@ -992,7 +1001,8 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       setCbtScore(correct);
       setCbtFinished(true);
       setIsCalculatorOpen(false); 
-      saveExamResultsToCloud(correct, newlyFailedCards, fragileQuestions);
+      // 👉 UPDATED: Send pacing log to the cloud function
+      saveExamResultsToCloud(correct, newlyFailedCards, fragileQuestions, questionTimes);
     }
   };
 
@@ -1011,7 +1021,8 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     await updateDoc(doc(db, "users", user.uid), { notifications: updatedNotifs });
   };
 
-  const saveExamResultsToCloud = async (finalScore, newlyFailedCards, fragileQuestions) => {
+  // 👉 UPDATED: Function Signature & Payload
+  const saveExamResultsToCloud = async (finalScore, newlyFailedCards, fragileQuestions, pacingData) => {
     if (!user) return; 
     try {
       const topicStats = {};
@@ -1022,7 +1033,17 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         if (cbtAnswers[idx] === q.answer) topicStats[topic].correct += 1;
       });
       const percentage = Math.round((finalScore / activeExamQuestions.length) * 100);
-      const examRecord = { userId: user.uid, score: finalScore, totalQuestions: activeExamQuestions.length, percentage: percentage, topicMastery: topicStats, completedAt: new Date().toISOString() };
+      
+      const examRecord = { 
+        userId: user.uid, 
+        score: finalScore, 
+        totalQuestions: activeExamQuestions.length, 
+        percentage: percentage, 
+        topicMastery: topicStats, 
+        pacing: pacingData, // 👉 INJECT THE PACING LOGS HERE
+        completedAt: new Date().toISOString() 
+      };
+      
       await addDoc(collection(db, "examResults"), examRecord);
       
       const userRef = doc(db, "users", user.uid);
@@ -1459,9 +1480,8 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           coreSubjects={coreSubjects}
           showAllSubjects={showAllSubjects}
           setShowAllSubjects={setShowAllSubjects}
-examDifficulty={examDifficulty}
+          examDifficulty={examDifficulty}
           setExamDifficulty={setExamDifficulty}
-
         />
       )}
 
@@ -1494,6 +1514,7 @@ examDifficulty={examDifficulty}
           shuffleOptions={shuffleOptions}
           isAdmin={isAdmin} 
           handleReportQuestion={handleReportQuestion} 
+          questionTimes={questionTimes} // 👉 ADD THIS LINE
         />
       )}
 

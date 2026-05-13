@@ -10,11 +10,10 @@ const CbtSimulator = ({
   instantFeedback = false,
   shuffleOptions = false,
   isAdmin = false,
-  handleReportQuestion 
+  handleReportQuestion,
+  questionTimes = {} // 👉 ADDED: Now receiving the pacing data
 }) => {
 
-  // 👉 BUG FIX: We removed the `useMemo` double-shuffle. 
-  // We now trust the exactly array sent by ExamMode!
   const currentOptionsToDisplay = activeExamQuestions[cbtIndex]?.options || [];
 
   const handleOptionClick = (option) => {
@@ -212,6 +211,12 @@ const CbtSimulator = ({
             });
             const masteryArray = Object.keys(topicStats).map(topic => ({ topic, percentage: Math.round((topicStats[topic].correct / topicStats[topic].total) * 100), ...topicStats[topic] })).sort((a, b) => a.percentage - b.percentage); 
 
+            // 👉 ADDED: Pacing Analytics Math
+            const pacingVals = Object.values(questionTimes || {});
+            const totalTimeSpent = pacingVals.reduce((a,b) => a + b, 0);
+            const avgTime = activeExamQuestions.length > 0 ? Math.round(totalTimeSpent / activeExamQuestions.length) : 0;
+            const slowestTime = pacingVals.length > 0 ? Math.max(...pacingVals) : 0;
+
             return (
               <>
                 {!isReviewing ? (
@@ -240,9 +245,33 @@ const CbtSimulator = ({
                         <div style={{ color: '#94a3b8', fontSize: '0.7rem', letterSpacing: '1px' }}>INCORRECT</div>
                       </div>
                     </div>
+
+                    {/* 👉 THE NEW PACING ANALYTICS CARD */}
+                    <div style={{ width: '100%', maxWidth: '600px', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', overflow: 'hidden', marginBottom: '20px' }}>
+                      <div style={{ padding: '20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ margin: '0 0 0 0', color: '#e2e8f0', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Timer size={20} color="#38bdf8" /> Speed & Pacing
+                        </h3>
+                      </div>
+                      <div style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', gap: '10px', textAlign: 'center' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ color: '#38bdf8', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(avgTime)}</div>
+                          <div style={{ color: '#94a3b8', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '5px' }}>AVG PER Q.</div>
+                        </div>
+                        <div style={{ flex: 1, borderLeft: '1px solid #1e293b', borderRight: '1px solid #1e293b' }}>
+                          <div style={{ color: '#ef4444', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(slowestTime)}</div>
+                          <div style={{ color: '#94a3b8', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '5px' }}>SLOWEST Q.</div>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ color: '#10b981', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(totalTimeSpent)}</div>
+                          <div style={{ color: '#94a3b8', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '5px' }}>TOTAL TIME</div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div style={{ width: '100%', maxWidth: '600px', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', overflow: 'hidden', marginBottom: '40px' }}>
                       <div style={{ padding: '20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h3 style={{ margin: '0 0 10px 0', color: '#e2e8f0', fontSize: '1.2rem' }}>Topic Breakdown</h3>
+                        <h3 style={{ margin: '0 0 0 0', color: '#e2e8f0', fontSize: '1.2rem' }}>Topic Breakdown</h3>
                       </div>
                       <div style={{ padding: '20px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -260,6 +289,7 @@ const CbtSimulator = ({
                         </div>
                       </div>
                     </div>
+
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '40px', width: '100%', justifyContent: 'center' }}>
                       <button onClick={() => { setIsReviewing(true); window.scrollTo(0,0); }} style={{ flex: '1', minWidth: '200px', padding: '12px 25px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '50px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                         <BookOpen size={18} /> REVIEW ERRORS
@@ -290,8 +320,18 @@ const CbtSimulator = ({
 
                           <p style={{ color: '#fff', fontSize: '1rem', lineHeight: '1.4', margin: '0 0 15px 0' }}>{idx + 1}. {q.q}</p>
                           <div style={{ background: '#020617', padding: '12px', borderRadius: '8px' }}>
-                            <p style={{ margin: '0 0 5px 0', color: isCorrect ? '#10b981' : '#ef4444', fontSize: '0.9rem' }}>Your Answer: <span style={{ color: '#cbd5e1' }}>{userAnswer || "Skipped"}</span></p>
-                            {!isCorrect && <p style={{ margin: 0, color: '#10b981', fontSize: '0.9rem' }}>Correct Answer: <span style={{ color: '#cbd5e1' }}>{q.answer}</span></p>}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                              <div>
+                                <p style={{ margin: '0 0 5px 0', color: isCorrect ? '#10b981' : '#ef4444', fontSize: '0.9rem' }}>Your Answer: <span style={{ color: '#cbd5e1' }}>{userAnswer || "Skipped"}</span></p>
+                                {!isCorrect && <p style={{ margin: 0, color: '#10b981', fontSize: '0.9rem' }}>Correct Answer: <span style={{ color: '#cbd5e1' }}>{q.answer}</span></p>}
+                              </div>
+                              
+                              {/* 👉 ADDED: Individual Time Spent Pill */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#94a3b8', fontSize: '0.8rem', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '6px' }}>
+                                <Timer size={14} /> Time Spent: {formatTime(questionTimes[idx] || 0)}
+                              </div>
+
+                            </div>
                           </div>
                         </div>
                       )
