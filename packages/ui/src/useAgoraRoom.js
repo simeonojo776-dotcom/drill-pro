@@ -70,13 +70,15 @@ export const useAgoraRoom = (channelName, userName, roomMode) => {
 
     initAgora();
 
-    return () => {
+   return () => {
       isMounted = false;
       if (localAudioTrack) {
         localAudioTrack.stop();
         localAudioTrack.close();
       }
       if (clientRef.current) {
+        // 👉 ADDED: Strip all listeners so hot-reloads don't leave ghosts
+        clientRef.current.removeAllListeners(); 
         clientRef.current.leave();
       }
     };

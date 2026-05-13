@@ -11,7 +11,9 @@ const ExamSetup = ({
   instantFeedback = false, setInstantFeedback,
   userData, isAdmin, coreSubjects, 
   showAllSubjects, 
-  setShowAllSubjects
+  setShowAllSubjects,
+  examDifficulty,
+  setExamDifficulty
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [localName, setLocalName] = useState("CANDIDATE");
@@ -195,6 +197,35 @@ const ExamSetup = ({
                 </div>
               </div>
             </div>
+{/* DIFFICULTY SELECTOR */}
+        <div style={{ marginBottom: '30px' }}>
+          <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '15px' }}>
+            Exam Difficulty
+          </label>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {['all', 'easy', 'medium', 'hard'].map((level) => (
+              <button
+                key={level}
+                onClick={() => setExamDifficulty(level)}
+                style={{
+                  flex: 1,
+                  padding: '12px 0',
+                  background: examDifficulty === level ? 'rgba(56, 189, 248, 0.15)' : '#0f172a',
+                  border: `1px solid ${examDifficulty === level ? '#38bdf8' : '#1e293b'}`,
+                  color: examDifficulty === level ? '#38bdf8' : '#64748b',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  textTransform: 'capitalize',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {level}
+              </button>
+            ))}
+          </div>
+        </div>
+            
 
             <button onClick={handleStartOfficialExam} disabled={isFetchingExam || selectedSubTopics.length === 0} style={{ width: '100%', padding: '16px', borderRadius: '10px', border: 'none', background: selectedSubTopics.length === 0 ? '#334155' : 'linear-gradient(135deg, #0284c7, #0ea5e9)', color: 'white', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>
               {isFetchingExam ? 'INITIALIZING...' : 'START EXAM'}

@@ -75,6 +75,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [activityHistory, setActivityHistory] = useState([]);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const fileInputRef = useRef(null);
+  const [examDifficulty, setExamDifficulty] = useState('all'); // 👉 NEW
 
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -841,7 +842,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     }
   };
 
-  const handleStartOfficialExam = async () => {
+ const handleStartOfficialExam = async () => {
     if (selectedSubTopics.length === 0) { alert("⚠️ Please select at least one Official Subject Bank first!"); return; }
 
     const currentCount = dailyUsage?.count || 0;
@@ -882,14 +883,19 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           });
       });
 
-      if (allQuestions.length === 0) { 
-        alert(`No questions found for the selected subjects and data source!`); 
+      // 👉 THE NEW DIFFICULTY FILTER ENGINE
+      let processedQuestions = allQuestions;
+      if (examDifficulty !== 'all') {
+        // Includes questions matching the tag, AND legacy questions without a tag so the app doesn't crash on old data
+        processedQuestions = allQuestions.filter(q => !q.difficulty || q.difficulty === examDifficulty);
+      }
+
+      if (processedQuestions.length === 0) { 
+        alert(`No questions found for the selected subjects at the ${examDifficulty.toUpperCase()} difficulty level!`); 
         setIsFetchingExam(false); 
         return; 
       }
       
-      let processedQuestions = allQuestions;
-
       if (shuffleOptions) {
          processedQuestions = processedQuestions.map(q => {
             const shuffledArray = [...q.options].sort(() => 0.5 - Math.random());
@@ -913,7 +919,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       
       setActiveExamQuestions(finalExamPayload);
       
-      // 👉 UPDATED: The Routing Engine - Check if we are creating a lobby or taking a solo CBT
+      // 👉 UPDATED: The Routing Engine
       if (isCreatingClassroom) {
         const docRef = await addDoc(collection(db, "sharedExams"), {
           questions: finalExamPayload,
@@ -1453,6 +1459,9 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           coreSubjects={coreSubjects}
           showAllSubjects={showAllSubjects}
           setShowAllSubjects={setShowAllSubjects}
+examDifficulty={examDifficulty}
+          setExamDifficulty={setExamDifficulty}
+
         />
       )}
 
