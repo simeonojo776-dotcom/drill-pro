@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, getDocs, query, where, addDoc, writeBatch, doc, updateDoc, limit, onSnapshot, increment, setDoc, orderBy, arrayUnion, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from './firebase'; 
-import { X, Timer, Zap, BookOpen, RefreshCcw, ArrowLeft, Flag, Calculator, Trash2, Trophy, User, ShieldAlert, Settings, Camera, Share2, Users, PenTool, Flame, MessageSquarePlus, CheckCircle2 } from 'lucide-react';
+import { X, Timer, Zap, BookOpen, RefreshCcw, ArrowLeft, Flag, Calculator, Trash2, Trophy, User, ShieldAlert, Settings, Camera, Share2, Users, PenTool, Flame, MessageSquarePlus, CheckCircle2, Download } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics'; 
 import PremiumModal from './PremiumModal'; 
 import Image from 'next/image';
@@ -112,7 +112,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const [cbtScore, setCbtScore] = useState(0);
   const [isReviewing, setIsReviewing] = useState(false);
   
-  // 👉 ADDED: Pacing Engine State
   const [questionTimes, setQuestionTimes] = useState({});
 
   const [isSubmittingForge, setIsSubmittingForge] = useState(false);
@@ -120,6 +119,9 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     q: '', optA: '', optB: '', optC: '', optD: '', answer: '', subject: 'GENERAL'
   });
   const [isAiGenerating, setIsAiGenerating] = useState(false);
+  
+  // 👉 NEW: Stealth Native App Detector
+  const [isNativeApp, setIsNativeApp] = useState(false);
 
   const triggerHaptic = async (style = ImpactStyle.Light) => {
     try { await Haptics.impact({ style }); } catch (e) { }
@@ -134,6 +136,15 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     }
     actionCallback();
   };
+
+  useEffect(() => {
+    // Check if user is inside Capacitor or a PWA
+    if (typeof window !== 'undefined') {
+      const isCapacitor = window.Capacitor?.isNative;
+      const isPWA = window.matchMedia('(display-mode: standalone)').matches;
+      if (isCapacitor || isPWA) setIsNativeApp(true);
+    }
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -195,7 +206,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           setFlaggedQuestions(new Set());
           setCbtAnswers({});
           setCbtIndex(0);
-          setQuestionTimes({}); // 👉 RESET PACING LOG
+          setQuestionTimes({}); 
           setCbtFinished(false);
           setIsReviewing(false);
           setActiveModule('cbt');
@@ -938,7 +949,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         setFlaggedQuestions(new Set());
         setCbtAnswers({});
         setCbtIndex(0);
-        setQuestionTimes({}); // 👉 RESET PACING LOG
+        setQuestionTimes({}); 
         setActiveModule('cbt');
         setCbtFinished(false);
         setIsReviewing(false); 
@@ -957,14 +968,12 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     setActiveModule('examSetup');
   };
 
-  // 👉 UPDATED: Shadow Timer for Pacing Analytics
   useEffect(() => {
     let timer;
     if (activeModule === 'cbt' && !cbtFinished && cbtTimeLeft > 0) {
       timer = setInterval(() => { 
         setCbtTimeLeft((prev) => prev - 1); 
         
-        // Add 1 second to the specific question currently on screen
         setQuestionTimes((prev) => ({
           ...prev,
           [cbtIndex]: (prev[cbtIndex] || 0) + 1
@@ -1001,7 +1010,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       setCbtScore(correct);
       setCbtFinished(true);
       setIsCalculatorOpen(false); 
-      // 👉 UPDATED: Send pacing log to the cloud function
       saveExamResultsToCloud(correct, newlyFailedCards, fragileQuestions, questionTimes);
     }
   };
@@ -1021,7 +1029,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     await updateDoc(doc(db, "users", user.uid), { notifications: updatedNotifs });
   };
 
-  // 👉 UPDATED: Function Signature & Payload
   const saveExamResultsToCloud = async (finalScore, newlyFailedCards, fragileQuestions, pacingData) => {
     if (!user) return; 
     try {
@@ -1040,7 +1047,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         totalQuestions: activeExamQuestions.length, 
         percentage: percentage, 
         topicMastery: topicStats, 
-        pacing: pacingData, // 👉 INJECT THE PACING LOGS HERE
+        pacing: pacingData, 
         completedAt: new Date().toISOString() 
       };
       
@@ -1140,6 +1147,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
   const handleNextCard = () => { setIsFlipped(false); setTimeout(() => setCurrentIndex(p => p < cardsToTest.length - 1 ? p + 1 : p), 150); };
   const handlePrevCard = () => { setIsFlipped(false); setTimeout(() => setCurrentIndex(p => p > 0 ? p - 1 : 0), 150); };
 
+  // 👉 ADDED: Global Ambient Grid & Hover Lift Animations
   const animationStyles = `
     .flashcard-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s; transform-style: preserve-3d; }
     .flashcard-flipped .flashcard-inner { transform: rotateY(180deg); }
@@ -1148,6 +1156,32 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
     .flashcard-back { background-color: #1e293b; color: #38bdf8; transform: rotateY(180deg); }
     .spin-anim { animation: spin 1s linear infinite; }
     @keyframes spin { 100% { transform: rotate(360deg); } }
+    
+    .hub-bg {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background-image: linear-gradient(rgba(56, 189, 248, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(56, 189, 248, 0.04) 1px, transparent 1px);
+      background-size: 35px 35px;
+      z-index: 0;
+      pointer-events: none;
+      mask-image: radial-gradient(circle at center, black 30%, transparent 80%);
+      -webkit-mask-image: radial-gradient(circle at center, black 30%, transparent 80%);
+      animation: pulseGrid 8s infinite alternate ease-in-out;
+    }
+    @keyframes pulseGrid {
+      0% { opacity: 0.4; transform: scale(1); }
+      100% { opacity: 1; transform: scale(1.05); }
+    }
+    .card-hover {
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+      position: relative;
+      z-index: 1;
+    }
+    .card-hover:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+      border-color: rgba(56, 189, 248, 0.5) !important;
+    }
+    .card-hover:active { transform: translateY(2px) scale(0.98); }
   `;
 
   if (isLockedOut) {
@@ -1170,64 +1204,97 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
       }}
     >
       <style>{animationStyles}</style>
+      
+      {/* 👉 THE HOLOGRAPHIC BACKGROUND */}
+      {activeModule === 'hub' && <div className="hub-bg" />}
 
-      {/* GLOBAL HEADER */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', borderBottom: '1px solid rgba(245, 158, 11, 0.2)', background: '#020617', position: 'sticky', top: 0, zIndex: 100 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <Image src="/Drill (1).png" alt="Logo" width={32} height={32} style={{ borderRadius: '8px' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(239, 68, 68, 0.1)', padding: '5px 10px', borderRadius: '20px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-               <Flame size={18} color={streakCount > 0 ? "#ef4444" : "#64748b"} />
-               <span style={{ color: streakCount > 0 ? "#ef4444" : "#64748b", fontWeight: 'bold', fontSize: '0.9rem' }}>{streakCount}</span>
-            </div>
+      {/* 👉 MOBILE-SAFE FLEX TOP BAR */}
+      <div style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+        background: 'rgba(2, 6, 23, 0.75)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        padding: '12px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        minHeight: '70px',
+        gap: '10px'
+      }}>
 
-            <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => setActiveModule('notifications')}>
-              {(() => {
-                const totalUnread = unreadCount + (isAdmin && ghostNotification ? 1 : 0);
-                return (
-                  <>
-                    <Zap size={20} color={totalUnread > 0 ? "#f59e0b" : "#94a3b8"} />
-                    {totalUnread > 0 && (
-                      <div style={{ position: 'absolute', top: '-5px', right: '-5px', background: '#ef4444', color: '#fff', fontSize: '10px', width: '16px', height: '16px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', border: '2px solid #020617' }}>
-                        {totalUnread}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-
-            <h2 style={{ margin: 0, color: '#f59e0b', letterSpacing: '2px', fontSize: '1.2rem', textTransform: 'uppercase' }}>
-              {activeModule === 'hub' ? 'Protocol' : activeModule.toUpperCase()}
-            </h2>
+        {/* LEFT SIDE: App Identity & Streak */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, justifyContent: 'flex-start', overflow: 'hidden' }}>
+          <Image src="/Drill (1).png" alt="Logo" width={30} height={30} style={{ borderRadius: '8px', flexShrink: 0 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: streakCount > 0 ? '#f59e0b' : '#64748b', fontWeight: '900', fontSize: '1.1rem' }}>
+            <Flame size={20} fill={streakCount > 0 ? "#f59e0b" : "none"} /> {streakCount}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-            {activeModule === 'hub' && (
-              <button onClick={() => setActiveModule('profile')} style={{ background: 'transparent', border: '1px solid #334155', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '8px', transition: 'all 0.2s' }}>
-                <Settings size={18} />
-              </button>
-            )}
 
-            {activeModule !== 'hub' && (
-              <button onClick={() => handleProtectedNavigation(() => setActiveModule('hub'))} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', padding: '8px 15px', borderRadius: '8px' }}>
-                <ArrowLeft size={18} /> HUB
-              </button>
-            )}
-            
-            <button onClick={() => handleProtectedNavigation(closeExamMode)} style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', padding: '8px 15px', borderRadius: '8px' }}>
-              <X size={18} /> EXIT
+        {/* CENTER: Module Title (Responsive Flex) */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          color: '#f8fafc',
+          fontWeight: '800',
+          fontSize: 'clamp(0.8rem, 3vw, 1.1rem)', 
+          letterSpacing: '2px',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+          flex: 1,
+          whiteSpace: 'nowrap',
+          position: 'relative'
+        }} onClick={() => setActiveModule('notifications')}>
+          {activeModule === 'arena' ? (
+            <><Users size={18} color="#f59e0b" fill="#f59e0b" /> ARENA</>
+          ) : activeModule === 'hub' ? (
+            <><Zap size={18} color="#f59e0b" /> PROTOCOL</>
+          ) : (
+            <><Timer size={18} color="#38bdf8" /> {activeModule}</>
+          )}
+          
+          {/* Sleek Notification Dot */}
+          {(() => {
+            const totalUnread = unreadCount + (isAdmin && ghostNotification ? 1 : 0);
+            if (totalUnread > 0) {
+              return (
+                <span style={{ position: 'absolute', top: '-8px', right: '-15px', background: '#ef4444', color: '#fff', fontSize: '0.65rem', fontWeight: 'bold', width: '18px', height: '18px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid rgba(2, 6, 23, 0.75)' }}>
+                  {totalUnread}
+                </span>
+              );
+            }
+            return null;
+          })()}
+        </div>
+
+        {/* RIGHT SIDE: Utilities & Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, justifyContent: 'flex-end' }}>
+          {activeModule === 'hub' ? (
+            <button onClick={() => setActiveModule('profile')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color 0.2s' }}>
+              <Settings size={20} />
             </button>
+          ) : (
+            <button onClick={() => handleProtectedNavigation(() => setActiveModule('hub'))} style={{ background: 'transparent', color: '#94a3b8', border: 'none', padding: '6px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <ArrowLeft size={16} /> HUB
+            </button>
+          )}
+
+          <button onClick={() => handleProtectedNavigation(closeExamMode)} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: 'none', borderRadius: '8px', padding: '6px 12px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <X size={16} /> EXIT
+          </button>
         </div>
       </div>
 
-      {/* THE MAIN HUB (MOBILE OPTIMIZED GRID) */}
+      {/* THE MAIN HUB */}
       {activeModule === 'hub' && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '1000px', margin: '40px auto 100px auto', width: '100%', padding: '0 20px', boxSizing: 'border-box' }}>
           
           {closestExam && daysToClosest <= 7 && (
-            <div style={{ width: '100%', maxWidth: '1000px', background: daysToClosest <= 3 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)', border: `1px solid ${daysToClosest <= 3 ? '#ef4444' : '#f59e0b'}`, padding: '20px', borderRadius: '12px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+            <div className="card-hover" style={{ width: '100%', maxWidth: '1000px', background: daysToClosest <= 3 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)', border: `1px solid ${daysToClosest <= 3 ? '#ef4444' : '#f59e0b'}`, padding: '20px', borderRadius: '12px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
                 <div>
                     <h3 style={{ margin: 0, color: daysToClosest <= 3 ? '#ef4444' : '#f59e0b', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <ShieldAlert size={20} /> 
@@ -1246,28 +1313,28 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
             </div>
           )}
 
-          <h1 style={{ color: '#fff', fontSize: '2rem', marginBottom: '10px', textAlign: 'center' }}>Select Training Module</h1>
-          <p style={{ color: '#94a3b8', fontSize: '1rem', marginBottom: '40px', textAlign: 'center' }}>Choose your preparation protocol.</p>
+          <h1 style={{ color: '#fff', fontSize: '2rem', marginBottom: '10px', textAlign: 'center', position: 'relative', zIndex: 1 }}>Select Training Module</h1>
+          <p style={{ color: '#94a3b8', fontSize: '1rem', marginBottom: '40px', textAlign: 'center', position: 'relative', zIndex: 1 }}>Choose your preparation protocol.</p>
           
-          {/* 👉 NEW CSS GRID LAYOUT */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', width: '100%', marginBottom: '40px' }}>
             
-            <div onClick={() => setActiveModule('examSetup')} style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', boxShadow: '0 10px 30px rgba(245, 158, 11, 0.1)' }}>
+            <div className="card-hover" onClick={() => setActiveModule('examSetup')} style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', backdropFilter: 'blur(8px)' }}>
               <div style={{ background: 'rgba(245, 158, 11, 0.1)', padding: '15px', borderRadius: '50%' }}><Timer size={26} color="#f59e0b" /></div>
               <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>CBT Simulator</h3>
             </div>
             
-            <div onClick={() => setActiveModule('analytics')} style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid #8b5cf6', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px' }}>
+            {/* 👉 DASHBOARD RENAMED */}
+            <div className="card-hover" onClick={() => setActiveModule('analytics')} style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(139, 92, 246, 0.4)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', backdropFilter: 'blur(8px)' }}>
               <div style={{ background: 'rgba(139, 92, 246, 0.1)', padding: '15px', borderRadius: '50%' }}><Zap size={26} color="#8b5cf6" /></div>
-              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>Command Center</h3>
+              <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>Dashboard</h3>
             </div>
             
-            <div onClick={() => setActiveModule('arena')} style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(59, 130, 246, 0.5)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px' }}>
+            <div className="card-hover" onClick={() => setActiveModule('arena')} style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', backdropFilter: 'blur(8px)' }}>
               <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '15px', borderRadius: '50%' }}><Users size={26} color="#3b82f6" /></div>
               <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>Live Classroom</h3>
             </div>
 
-            <div onClick={() => setActiveModule('rapid')} style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid #3b82f6', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', position: 'relative', overflow: 'hidden' }}>
+            <div className="card-hover" onClick={() => setActiveModule('rapid')} style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', position: 'relative', overflow: 'hidden', backdropFilter: 'blur(8px)' }}>
               {userFlashcards.length > 0 && (
                 <div style={{ position: 'absolute', top: '10px', right: '10px', background: '#ef4444', color: '#fff', padding: '4px 8px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 'bold' }}>
                   {userFlashcards.length} Vaulted
@@ -1277,12 +1344,12 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
               <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>Rapid Fire</h3>
             </div>
             
-            <div onClick={() => setActiveModule('leaderboard')} style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px' }}>
+            <div className="card-hover" onClick={() => setActiveModule('leaderboard')} style={{ background: 'rgba(15, 23, 42, 0.85)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', backdropFilter: 'blur(8px)' }}>
               <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '15px', borderRadius: '50%' }}><Trophy size={26} color="#10b981" /></div>
               <h3 style={{ color: '#fff', margin: 0, fontSize: '1.1rem' }}>Leaderboard</h3>
             </div>
 
-            <div onClick={() => setActiveModule('forge')} style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(234, 88, 12, 0.1))', border: '1px solid #f59e0b', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px' }}>
+            <div className="card-hover" onClick={() => setActiveModule('forge')} style={{ background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(234, 88, 12, 0.1))', border: '1px solid rgba(245, 158, 11, 0.5)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px', backdropFilter: 'blur(8px)' }}>
               <div style={{ background: 'rgba(245, 158, 11, 0.2)', padding: '15px', borderRadius: '50%' }}><PenTool size={26} color="#f59e0b" /></div>
               <h3 style={{ color: '#f59e0b', margin: 0, fontSize: '1.1rem' }}>Community Forge</h3>
             </div>
@@ -1290,17 +1357,32 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           </div>
 
           {isAdmin && (
-            <button onClick={() => setActiveModule('admin')} style={{ width: '100%', padding: '15px', background: 'rgba(56, 189, 248, 0.1)', border: '1px dashed #38bdf8', color: '#38bdf8', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+            <button className="card-hover" onClick={() => setActiveModule('admin')} style={{ width: '100%', padding: '15px', background: 'rgba(56, 189, 248, 0.1)', border: '1px dashed rgba(56, 189, 248, 0.5)', color: '#38bdf8', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', backdropFilter: 'blur(8px)' }}>
               <Zap size={18} /> ADMIN DASHBOARD
             </button>
           )}
 
-          <div onClick={() => setShowFeedbackModal(true)} style={{ width: '100%', padding: '20px', background: 'rgba(56, 189, 248, 0.05)', border: '1px dashed rgba(56, 189, 248, 0.4)', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: '#38bdf8', transition: 'all 0.2s', marginTop: '10px' }}>
+          <div className="card-hover" onClick={() => setShowFeedbackModal(true)} style={{ width: '100%', padding: '20px', background: 'rgba(56, 189, 248, 0.05)', border: '1px dashed rgba(56, 189, 248, 0.3)', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: '#38bdf8', marginTop: '10px', backdropFilter: 'blur(8px)' }}>
             <MessageSquarePlus size={20} />
             <span style={{ fontWeight: 'bold' }}>Found a bug? Tell the Developer!</span>
           </div>
+
+          {/* 👉 STEALTH DOWNLOAD LINK (Hidden if already in app) */}
+          {!isNativeApp && (
+            <div style={{ marginTop: '25px', textAlign: 'center', position: 'relative', zIndex: 1 }}>
+              <a 
+                href="/drill-pro-v1.apk" 
+                download
+                style={{ textDecoration: 'none', color: '#64748b', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '20px', background: 'rgba(15, 23, 42, 0.5)', border: '1px solid #1e293b', transition: 'all 0.2s' }}
+              >
+                <Download size={14} /> Download Native Android App
+              </a>
+            </div>
+          )}
+
         </div>
       )}
+      
 
       {activeModule === 'forge' && (
         <CommunityForge 
@@ -1314,6 +1396,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         />
       )}
 
+      {/* 👉 DASHBOARD COMPONENT RENDER */}
       {activeModule === 'analytics' && (
         <CommandCenter 
           liveStats={liveStats}
@@ -1335,7 +1418,6 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         />
       )}
 
-    {/* 👉 UPDATED: Handling the creation state block */}
     {activeModule === 'arena' && (
       <LiveClassroom 
         joinCode={joinCode}
@@ -1347,7 +1429,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
         
         handleCommenceExam={async (action) => {
           if (action === 'create') {
-            setIsCreatingClassroom(true); // Flag to intercept start button
+            setIsCreatingClassroom(true);
             setActiveModule('examSetup');
             return;
           }
@@ -1514,7 +1596,7 @@ const ExamMode = ({ closeExamMode, themeColor, savedFlashcards, savedCbtExam, us
           shuffleOptions={shuffleOptions}
           isAdmin={isAdmin} 
           handleReportQuestion={handleReportQuestion} 
-          questionTimes={questionTimes} // 👉 ADD THIS LINE
+          questionTimes={questionTimes}
         />
       )}
 

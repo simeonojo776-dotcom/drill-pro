@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Share2, Calculator, Flag, Timer, BookOpen, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Share2, Calculator, Flag, Timer, BookOpen, AlertTriangle, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react';
 
 const CbtSimulator = ({
   cbtFinished, setCbtFinished, activeExamQuestions, cbtIndex, setCbtIndex,
@@ -11,7 +11,7 @@ const CbtSimulator = ({
   shuffleOptions = false,
   isAdmin = false,
   handleReportQuestion,
-  questionTimes = {} // 👉 ADDED: Now receiving the pacing data
+  questionTimes = {} 
 }) => {
 
   const currentOptionsToDisplay = activeExamQuestions[cbtIndex]?.options || [];
@@ -23,6 +23,8 @@ const CbtSimulator = ({
   };
 
   const [localCalcDisplay, setLocalCalcDisplay] = useState('');
+  // 👉 NEW: State to toggle the heavy analytics on the final screen
+  const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(false);
   
   const handleScientificCalc = (val) => {
     if (val === 'C') { 
@@ -211,7 +213,6 @@ const CbtSimulator = ({
             });
             const masteryArray = Object.keys(topicStats).map(topic => ({ topic, percentage: Math.round((topicStats[topic].correct / topicStats[topic].total) * 100), ...topicStats[topic] })).sort((a, b) => a.percentage - b.percentage); 
 
-            // 👉 ADDED: Pacing Analytics Math
             const pacingVals = Object.values(questionTimes || {});
             const totalTimeSpent = pacingVals.reduce((a,b) => a + b, 0);
             const avgTime = activeExamQuestions.length > 0 ? Math.round(totalTimeSpent / activeExamQuestions.length) : 0;
@@ -246,55 +247,67 @@ const CbtSimulator = ({
                       </div>
                     </div>
 
-                    {/* 👉 THE NEW PACING ANALYTICS CARD */}
-                    <div style={{ width: '100%', maxWidth: '600px', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', overflow: 'hidden', marginBottom: '20px' }}>
-                      <div style={{ padding: '20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h3 style={{ margin: '0 0 0 0', color: '#e2e8f0', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Timer size={20} color="#38bdf8" /> Speed & Pacing
-                        </h3>
-                      </div>
-                      <div style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', gap: '10px', textAlign: 'center' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ color: '#38bdf8', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(avgTime)}</div>
-                          <div style={{ color: '#94a3b8', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '5px' }}>AVG PER Q.</div>
-                        </div>
-                        <div style={{ flex: 1, borderLeft: '1px solid #1e293b', borderRight: '1px solid #1e293b' }}>
-                          <div style={{ color: '#ef4444', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(slowestTime)}</div>
-                          <div style={{ color: '#94a3b8', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '5px' }}>SLOWEST Q.</div>
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ color: '#10b981', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(totalTimeSpent)}</div>
-                          <div style={{ color: '#94a3b8', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '5px' }}>TOTAL TIME</div>
-                        </div>
-                      </div>
-                    </div>
+                    {/* 👉 THE NEW TOGGLE BUTTON */}
+                    <button 
+                      onClick={() => setShowDetailedAnalytics(!showDetailedAnalytics)}
+                      style={{ background: 'rgba(56, 189, 248, 0.05)', color: '#38bdf8', border: '1px dashed rgba(56, 189, 248, 0.4)', padding: '12px 25px', borderRadius: '8px', cursor: 'pointer', marginBottom: '30px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}
+                    >
+                      {showDetailedAnalytics ? <><ChevronUp size={18} /> HIDE DETAILED ANALYTICS</> : <><ChevronDown size={18} /> VIEW DETAILED ANALYTICS</>}
+                    </button>
 
-                    <div style={{ width: '100%', maxWidth: '600px', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', overflow: 'hidden', marginBottom: '40px' }}>
-                      <div style={{ padding: '20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h3 style={{ margin: '0 0 0 0', color: '#e2e8f0', fontSize: '1.2rem' }}>Topic Breakdown</h3>
-                      </div>
-                      <div style={{ padding: '20px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                          {masteryArray.map((stat, i) => (
-                            <div key={i}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '0.9rem' }}>
-                                <span style={{ color: '#cbd5e1' }}>{stat.topic}</span>
-                                <span style={{ fontWeight: 'bold', color: stat.percentage >= 70 ? '#10b981' : (stat.percentage >= 40 ? '#f59e0b' : '#ef4444') }}>{stat.percentage}% ({stat.correct}/{stat.total})</span>
-                              </div>
-                              <div style={{ width: '100%', background: '#1e293b', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
-                                <div style={{ width: `${stat.percentage}%`, background: stat.percentage >= 70 ? '#10b981' : (stat.percentage >= 40 ? '#f59e0b' : '#ef4444'), height: '100%', borderRadius: '4px' }}></div>
-                              </div>
+                    {/* 👉 WRAPPING HEAVY DATA IN THE TOGGLE STATE */}
+                    {showDetailedAnalytics && (
+                      <div style={{ width: '100%', maxWidth: '600px', display: 'flex', flexDirection: 'column', alignItems: 'center', animation: 'fadeIn 0.3s ease-in-out' }}>
+                        <div style={{ width: '100%', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', overflow: 'hidden', marginBottom: '20px' }}>
+                          <div style={{ padding: '20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ margin: '0 0 0 0', color: '#e2e8f0', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Timer size={20} color="#38bdf8" /> Speed & Pacing
+                            </h3>
+                          </div>
+                          <div style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', gap: '10px', textAlign: 'center' }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ color: '#38bdf8', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(avgTime)}</div>
+                              <div style={{ color: '#94a3b8', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '5px' }}>AVG PER Q.</div>
                             </div>
-                          ))}
+                            <div style={{ flex: 1, borderLeft: '1px solid #1e293b', borderRight: '1px solid #1e293b' }}>
+                              <div style={{ color: '#ef4444', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(slowestTime)}</div>
+                              <div style={{ color: '#94a3b8', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '5px' }}>SLOWEST Q.</div>
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ color: '#10b981', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(totalTimeSpent)}</div>
+                              <div style={{ color: '#94a3b8', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '5px' }}>TOTAL TIME</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ width: '100%', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', overflow: 'hidden', marginBottom: '40px' }}>
+                          <div style={{ padding: '20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ margin: '0 0 0 0', color: '#e2e8f0', fontSize: '1.2rem' }}>Topic Breakdown</h3>
+                          </div>
+                          <div style={{ padding: '20px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                              {masteryArray.map((stat, i) => (
+                                <div key={i}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '0.9rem' }}>
+                                    <span style={{ color: '#cbd5e1' }}>{stat.topic}</span>
+                                    <span style={{ fontWeight: 'bold', color: stat.percentage >= 70 ? '#10b981' : (stat.percentage >= 40 ? '#f59e0b' : '#ef4444') }}>{stat.percentage}% ({stat.correct}/{stat.total})</span>
+                                  </div>
+                                  <div style={{ width: '100%', background: '#1e293b', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${stat.percentage}%`, background: stat.percentage >= 70 ? '#10b981' : (stat.percentage >= 40 ? '#f59e0b' : '#ef4444'), height: '100%', borderRadius: '4px' }}></div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '40px', width: '100%', justifyContent: 'center' }}>
-                      <button onClick={() => { setIsReviewing(true); window.scrollTo(0,0); }} style={{ flex: '1', minWidth: '200px', padding: '12px 25px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '50px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                        <BookOpen size={18} /> REVIEW ERRORS
+                      <button onClick={() => { setIsReviewing(true); window.scrollTo(0,0); }} style={{ flex: '1', maxWidth: '300px', minWidth: '200px', padding: '15px 25px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '50px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontSize: '1.1rem' }}>
+                        <BookOpen size={20} /> REVIEW ERRORS
                       </button>
-                      <button onClick={() => { setActiveModule('hub'); setCbtFinished(false); setCbtIndex(0); setCbtAnswers({}); }} style={{ flex: '1', minWidth: '200px', padding: '12px 25px', background: 'transparent', color: '#94a3b8', border: '2px solid #334155', borderRadius: '50px', cursor: 'pointer', fontWeight: 'bold' }}>
+                      <button onClick={() => { setActiveModule('hub'); setCbtFinished(false); setCbtIndex(0); setCbtAnswers({}); setShowDetailedAnalytics(false); }} style={{ flex: '1', maxWidth: '300px', minWidth: '200px', padding: '15px 25px', background: 'transparent', color: '#94a3b8', border: '2px solid #334155', borderRadius: '50px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.1rem' }}>
                         EXIT TO MENU
                       </button>
                     </div>
@@ -326,7 +339,6 @@ const CbtSimulator = ({
                                 {!isCorrect && <p style={{ margin: 0, color: '#10b981', fontSize: '0.9rem' }}>Correct Answer: <span style={{ color: '#cbd5e1' }}>{q.answer}</span></p>}
                               </div>
                               
-                              {/* 👉 ADDED: Individual Time Spent Pill */}
                               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#94a3b8', fontSize: '0.8rem', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '6px' }}>
                                 <Timer size={14} /> Time Spent: {formatTime(questionTimes[idx] || 0)}
                               </div>
